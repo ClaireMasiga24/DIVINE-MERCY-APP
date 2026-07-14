@@ -1,64 +1,79 @@
 import Image from "next/image";
+import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F3EEE2] px-6 py-24">
+      <main className="flex w-full max-w-lg flex-col items-center text-center">
+        <div className="mb-10 flex items-center gap-2 text-[#B8975A]">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M12 3v18M5 8h14" strokeLinecap="round" />
+          </svg>
+          <span className="text-xs font-semibold tracking-[0.25em] text-[#6B5D4F]">
+            DIVINE MERCY
+          </span>
+        </div>
+
+        <div className="relative mb-10 h-72 w-72 sm:h-96 sm:w-96 float-animate">
+          <div className="absolute inset-0 rounded-full bg-[#D9B76A] blur-2xl opacity-40 glow-animate" />
+
+          <div className="absolute inset-0 rounded-full bg-gradient-to-b from-[#D9B76A] to-[#C9A24E] p-[3px] shadow-[0_8px_30px_rgba(180,140,60,0.35)]">
+            <div className="h-full w-full rounded-full bg-white p-2">
+              <div className="relative h-full w-full overflow-hidden rounded-full">
+                <Image
+                  src="/Images/SEETA PARISH DIVINE MERCY.png"
+                  alt="Divine Mercy Seeta Parish seal"
+                  fill
+                  className="object-cover"
+                  priority
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6 flex items-center gap-4">
+          <span className="h-px w-8 bg-[#C9A24E]/50" />
+          <p className="whitespace-nowrap font-serif text-xl italic text-[#B8975A]">
+            Jesus, I Trust In You
           </p>
+          <span className="h-px w-8 bg-[#C9A24E]/50" />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        <p className="mb-10 max-w-sm text-[15px] leading-7 text-[#8A8172]">
+          Welcome to the Divine Mercy community of Seeta Parish, a place of
+          prayer, fellowship, and devotion.
+        </p>
+
+        <Link
+          href="/login"
+          className="flex items-center gap-2 rounded-full bg-gradient-to-b from-[#E4C170] to-[#C9A24E] px-7 py-3.5 text-sm font-semibold text-[#4A3A1A] shadow-[0_4px_14px_rgba(190,150,60,0.35)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+            <path
+              d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            <circle cx="9" cy="7" r="4" />
+            <path d="M19 8v6M22 11h-6" strokeLinecap="round" />
+          </svg>
+          Enter Sanctuary
+        </Link>
       </main>
     </div>
   );
