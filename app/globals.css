@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eef5fc;
+  --foreground: #33262b;
 }
 
 @theme inline {
@@ -10,17 +10,49 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Heavenly design tokens — Divine Mercy Seeta Parish */
+  --color-sky: #eef5fc; /* page background (soft heavenly blue) */
+  --color-ivory: #fffdf7; /* card surfaces (warm white) */
+  --color-ivory-lift: #f6efe4; /* raised / hover surfaces */
+  --color-ink: #33262b; /* primary text (warm dark plum-brown) */
+  --color-dim: #8a7c84; /* secondary text */
+  --color-gold: #c9a24e; /* gold accent */
+  --color-gold-deep: #b08a3a; /* deeper gold accent */
+  --color-line: rgba(51, 38, 43, 0.1); /* hairline borders */
 }
 
 body {
-  background: var(--background);
+  background: linear-gradient(180deg, #dcebf8 0%, #eef5fc 45%, #fdf7ec 100%);
+  background-attachment: fixed;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.float-animate {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.glow-animate {
+  animation: glow 5s ease-in-out infinite;
 }

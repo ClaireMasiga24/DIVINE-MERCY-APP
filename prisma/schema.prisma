@@ -1,0 +1,383 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  MEMBER
+  SECRETARY
+  TREASURER
+  MOBILISER
+  PRO
+  CHAIRPERSON
+  PATRON
+  TECHNICAL_LEAD
+}
+
+enum Status {
+  ACTIVE
+  DEACTIVATED
+}
+
+enum EventType {
+  RECOLLECTION
+  HOLY_HOUR
+  BENEDICTION
+  HOLY_MASS
+  MEETING
+  PRAYER_MEETING
+  NOVENA
+  OTHER
+}
+
+enum MeetingType {
+  VIDEO
+  AUDIO
+  IN_PERSON
+}
+
+enum RsvpStatus {
+  ATTENDING
+  MAYBE
+  DECLINED
+}
+
+enum PrayerType {
+  NOVENA
+  CHAPLET
+  ROSARY
+  OTHER
+}
+
+enum NotificationType {
+  EVENT
+  MEETING
+  PRAYER
+  ANNOUNCEMENT
+  SYSTEM
+}
+
+// ============================================================
+// USERS & LEADERSHIP
+// ============================================================
+
+model User {
+  id              String   @id @default(uuid())
+  phoneNumber     String   @unique
+  fullName        String
+  email           String?  @unique
+  passwordHash    String?
+  profileImageUrl String?
+  role            Role     @default(MEMBER)
+  status          Status   @default(ACTIVE)
+  devotionStart   DateTime?
+  addedById       String?
+  addedBy         User?    @relation("MemberInvites", fields: [addedById], references: [id])
+  invitedUsers    User[]   @relation("MemberInvites")
+
+  posts                Post[]
+  comments             Comment[]
+  eventAttendees       EventAttendee[]
+  meetingParticipants  MeetingParticipant[]
+  meetingSessions      MeetingSession[]
+  reminders            Reminder[]
+  notificationDeliveries NotificationDelivery[]
+  deviceTokens         DeviceToken[]
+  createdEvents        Event[]
+  createdMeetings      Meeting[]
+  createdAnnouncements Announcement[]
+  createdNotifications Notification[]
+  settingsUpdated      AppSetting[]
+  conversationParticipants ConversationParticipant[]
+  messagesSent             Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// APP SETTINGS (discussion toggle controlled by Chairperson / Technical Lead)
+// ============================================================
+
+model AppSetting {
+  id                String    @id @default("global")
+  discussionEnabled Boolean   @default(true)
+  commentsEnabled   Boolean   @default(true)
+  updatedById       String?
+  updatedBy         User?     @relation(fields: [updatedById], references: [id])
+  updatedAt         DateTime  @updatedAt
+
+  // The daily Holy Hour alarm (03:00 and 15:00, Africa/Kampala — see
+  // HOLY_HOUR_TIMES in lib/alarms.ts) is inbuilt and always on. It fires for
+  // every active member except the Technical Lead. holyHourLastFiredAt stores
+  // the UTC instant of the last occurrence that fired, so each one claims
+  // atomically.
+  holyHourLastFiredAt DateTime?
+}
+
+// ============================================================
+// DISCUSSION & MESSAGING (members' comment section + private chats)
+// ============================================================
+
+model Post {
+  id             String    @id @default(uuid())
+  authorId       String
+  author         User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content        String
+  isAnnouncement Boolean   @default(false)
+  isPinned       Boolean   @default(false)
+  comments       Comment[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Private 1:1 conversations between members (the Discussion section's chat).
+// conversationKey is the sorted pair of participant ids ("a:b"), which makes
+// find-or-create race-proof: two simultaneous "start a chat" taps can't create
+// duplicate threads.
+model Conversation {
+  id              String   @id @default(uuid())
+  conversationKey String   @unique
+  participants    ConversationParticipant[]
+  messages        Message[]
+  createdAt       DateTime @default(now())
+}
+
+model ConversationParticipant {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Read cursor for unread badges: messages after this are "unread" to this user.
+  lastReadAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body           String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// ============================================================
+// EVENTS / CALENDAR + REMINDERS
+// ============================================================
+
+model Event {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  type        EventType @default(OTHER)
+  startTime   DateTime
+  endTime     DateTime?
+  location    String?
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  attendees   EventAttendee[]
+  reminders   Reminder[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model EventAttendee {
+  id         String     @id @default(uuid())
+  eventId    String
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rsvpStatus RsvpStatus @default(ATTENDING)
+  createdAt  DateTime   @default(now())
+
+  @@unique([eventId, userId])
+}
+
+model Reminder {
+  id        String   @id @default(uuid())
+  eventId   String?
+  event     Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  remindAt  DateTime
+  isSent    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([remindAt, isSent])
+}
+
+// ============================================================
+// MEETINGS (group video / audio calls, prayer meetings)
+// ============================================================
+
+model Meeting {
+  id           String      @id @default(uuid())
+  title        String
+  description  String?
+  type         MeetingType @default(VIDEO)
+  startsAt     DateTime
+  endsAt       DateTime?
+  meetingLink  String?
+  location     String? // physical venue or "Zoom link" etc
+  // How long before startsAt the reminder fires (0 = at start time). The
+  // meeting reminder is a distinct path from the daily Holy Hour alarm: one
+  // `notified` flag per meeting claims it atomically so no reminder sends
+  // twice, regardless of how many sweeps (interval, cron, poll) run.
+  reminderMinutesBefore Int     @default(15)
+  notified              Boolean @default(false)
+  createdById  String
+  createdBy    User        @relation(fields: [createdById], references: [id])
+  participants MeetingParticipant[]
+  signals      MeetingSignal[]
+  sessions     MeetingSession[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model MeetingParticipant {
+  id        String   @id @default(uuid())
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime?
+  leftAt    DateTime?
+
+  @@unique([meetingId, userId])
+}
+
+// WebRTC signaling queue: point-to-point offers/answers/ICE between call
+// sessions, consumed (deleted) by the recipient's next poll. `toSessionId`
+// addresses one browser session; broadcast join/leave is derived from
+// MeetingSession presence instead, so no broadcast messages are needed.
+model MeetingSignal {
+  id            String   @id @default(cuid())
+  meetingId     String
+  meeting       Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  fromSessionId String
+  toSessionId   String
+  type          String // "offer" | "answer" | "ice"
+  payload       Json
+  createdAt     DateTime @default(now())
+
+  @@index([meetingId, toSessionId, createdAt])
+}
+
+// Live call presence: one row per joined browser session (sessionId). Created
+// on join, deleted on leave. The room polls this alongside its signals.
+model MeetingSession {
+  id        String   @id @default(cuid())
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@index([meetingId])
+}
+
+// ============================================================
+// PRAYER RESOURCES (Novena, Chaplet, Rosary, Holy Rosary)
+// ============================================================
+
+model PrayerResource {
+  id        String     @id @default(uuid())
+  title     String
+  type      PrayerType @default(OTHER)
+  dayNumber Int? // e.g. Novena day 1-9
+  content   String?
+  imageUrl  String?
+  sourceUrl String? // link to the official Divine Mercy Catholic website
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+// ============================================================
+// ANNOUNCEMENTS & DAILY MESSAGES (synced from the Divine Mercy website)
+// ============================================================
+
+model Announcement {
+  id          String   @id @default(uuid())
+  title       String
+  body        String
+  imageUrl    String?
+  sourceUrl   String?
+  publishedAt DateTime @default(now())
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================================
+// NOTIFICATIONS & DEVICE TOKENS
+// ============================================================
+
+model Notification {
+  id           String           @id @default(uuid())
+  title        String
+  body         String
+  type         NotificationType @default(ANNOUNCEMENT)
+  targetRole   Role? // null = send to all members
+  link         String? // deep link, e.g. "/events/<id>"
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  createdById  String?
+  createdBy    User?            @relation(fields: [createdById], references: [id])
+  deliveries   NotificationDelivery[]
+  createdAt    DateTime         @default(now())
+}
+
+model NotificationDelivery {
+  id             String       @id @default(uuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveredAt    DateTime     @default(now())
+  readAt         DateTime?
+
+  @@unique([notificationId, userId])
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique // web push: the subscription endpoint
+  platform  String   @default("android") // "android" | "ios" | "web"
+  p256dh    String? // web push subscription key (required for sending)
+  authKey   String? // web push subscription auth secret (required for sending)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
