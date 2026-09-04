@@ -2,13 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { runAlarmCheck } from "@/lib/alarms";
-import { runMeetingCheck } from "@/lib/meeting-reminders";
 
 /**
- * Polled by the in-app alarm listener. Runs both sweeps (idempotent, so the
- * Holy Hour / event reminders and meeting reminders each fire at most once),
- * then returns this user's alarms from the last few minutes so the client can
- * ring the chime and show the banner.
+ * Polled by the in-app alarm listener. Runs the sweep (idempotent, so Holy
+ * Hour calls and event reminders each fire at most once), then returns this
+ * user's alarms from the last few minutes so the client can ring the incoming
+ * call / banner.
  */
 export async function POST() {
   const sessionUser = await getSessionUser();
@@ -16,13 +15,10 @@ export async function POST() {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  // Both sweeps are safe to run on every poll: reminders are claimed
+  // Safe to run on every poll: occurrences and reminders are claimed
   // atomically, so nothing fires twice.
   await runAlarmCheck().catch((err) => {
     console.error("[alarms] opportunistic sweep failed:", err);
-  });
-  await runMeetingCheck().catch((err) => {
-    console.error("[meetings] opportunistic sweep failed:", err);
   });
 
   const recent = await prisma.notificationDelivery.findMany({

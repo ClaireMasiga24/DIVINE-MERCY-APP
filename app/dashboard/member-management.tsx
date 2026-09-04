@@ -23,7 +23,16 @@ export default async function MemberManagement({ user }: { user: User }) {
 
   const members = await prisma.user.findMany({
     where: isTechLead ? undefined : { role: { not: "TECHNICAL_LEAD" } },
-    include: { addedBy: { select: { fullName: true, role: true } } },
+    select: {
+      id: true,
+      fullName: true,
+      phoneNumber: true,
+      role: true,
+      status: true,
+      birthday: true,
+      createdAt: true,
+      addedBy: { select: { fullName: true, role: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -48,6 +57,7 @@ export default async function MemberManagement({ user }: { user: User }) {
                   <tr className="border-b border-line bg-ivory-lift text-[11px] uppercase tracking-[0.15em] text-dim">
                     <th className="px-4 py-3 font-semibold">Member</th>
                     <th className="px-4 py-3 font-semibold">Phone</th>
+                    <th className="px-4 py-3 font-semibold">Birthday</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
                     <th className="px-4 py-3 font-semibold">Added</th>
                     <th className="px-4 py-3 text-right font-semibold">Actions</th>
@@ -68,6 +78,14 @@ export default async function MemberManagement({ user }: { user: User }) {
                         )}
                       </td>
                       <td className="px-4 py-3 text-dim">{m.phoneNumber}</td>
+                      <td className="px-4 py-3 text-dim">
+                        {m.birthday
+                          ? new Date(m.birthday).toLocaleDateString("en-GB", {
+                              day: "numeric",
+                              month: "long",
+                            })
+                          : <span className="text-dim/60">—</span>}
+                      </td>
                       <td className="px-4 py-3">
                         {m.status === "ACTIVE" ? (
                           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gold">
@@ -91,6 +109,9 @@ export default async function MemberManagement({ user }: { user: User }) {
                       <td className="px-4 py-3">
                         <MemberActions
                           memberId={m.id}
+                          fullName={m.fullName}
+                          phoneNumber={m.phoneNumber}
+                          birthday={m.birthday ? m.birthday.toISOString() : null}
                           role={m.role}
                           status={m.status}
                           isSelf={m.id === user.id}

@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { phoneNumber?: unknown; fullName?: unknown; role?: unknown };
+  let body: { phoneNumber?: unknown; fullName?: unknown; role?: unknown; birthday?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -28,6 +28,7 @@ export async function POST(req: Request) {
   const phoneNumber = normalizePhone(typeof body.phoneNumber === "string" ? body.phoneNumber : "");
   const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
   const role = typeof body.role === "string" ? body.role : "";
+  const birthday = parseBirthday(body.birthday);
 
   if (!phoneNumber) {
     return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
@@ -61,12 +62,20 @@ export async function POST(req: Request) {
         role: role as Role,
         status: "ACTIVE",
         addedById: sessionUser.id,
+        birthday,
       },
     });
     return NextResponse.json(
       {
         ok: true,
-        user: { id: user.id, phoneNumber: user.phoneNumber, fullName: user.fullName, role: user.role, status: user.status },
+        user: {
+          id: user.id,
+          phoneNumber: user.phoneNumber,
+          fullName: user.fullName,
+          role: user.role,
+          status: user.status,
+          birthday: user.birthday?.toISOString() ?? null,
+        },
       },
       { status: 201 }
     );
@@ -79,4 +88,17 @@ export async function POST(req: Request) {
     }
     throw e;
   }
+}
+
+/**
+ * `<input type="date">` emits `YYYY-MM-DD` (or empty for "not set").
+ * Parse leniently: empty / null / non-string → null; non-empty string
+ * must match YYYY-MM-DD and produce a valid Date. Anything else → 400
+ * upstream (caller's responsibility to validate before posting).
+ */
+function parseBirthday(input: unknown): Date | null {
+  if (typeof input !== "string" || input.trim() === "") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return null;
+  const d = new Date(input + "T00:00:00Z");
+  return Number.isNaN(d.getTime()) ? null : d;
 }

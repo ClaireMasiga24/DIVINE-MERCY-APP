@@ -16,7 +16,10 @@ export type SectionIconName =
   | "meetings"
   | "contributions"
   | "settings"
-  | "notifications";
+  | "notifications"
+  | "songs"
+  | "holy-god"
+  | "chaplet";
 
 const PATHS: Record<SectionIconName, ReactNode> = {
   overview: (
@@ -77,6 +80,34 @@ const PATHS: Record<SectionIconName, ReactNode> = {
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </>
   ),
+  songs: (
+    <>
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </>
+  ),
+  "holy-god": (
+    <>
+      <path d="M12 2v6" />
+      <path d="M12 16v6" />
+      <path d="M2 12h6" />
+      <path d="M16 12h6" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  chaplet: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="6" r="1.5" fill="currentColor" />
+      <circle cx="17.5" cy="9" r="1.2" fill="currentColor" />
+      <circle cx="18" cy="14.5" r="1.2" fill="currentColor" />
+      <circle cx="12" cy="18" r="1.2" fill="currentColor" />
+      <circle cx="6" cy="14.5" r="1.2" fill="currentColor" />
+      <circle cx="6.5" cy="9" r="1.2" fill="currentColor" />
+      <path d="M12 6v12" />
+    </>
+  ),
 };
 
 export function SectionIcon({ slug, className }: { slug: string; className?: string }) {
@@ -107,6 +138,9 @@ export const SECTION_SUBTITLE: Record<string, string> = {
   contributions: "Parish contributions",
   settings: "App preferences",
   notifications: "Your alerts and reminders",
+  songs: "Browse and play Divine Mercy songs",
+  "holy-god": "Prayers and reflections",
+  chaplet: "Watch the Divine Mercy Chaplet",
 };
 
 /** Accent gradients for the stacked cards — one per card type, cycled. */

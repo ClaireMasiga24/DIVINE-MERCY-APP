@@ -71,34 +71,42 @@ enum NotificationType {
 // ============================================================
 
 model User {
-  id              String   @id @default(uuid())
-  phoneNumber     String   @unique
+  id              String    @id @default(uuid())
+  phoneNumber     String    @unique
   fullName        String
-  email           String?  @unique
+  email           String?   @unique
   passwordHash    String?
   profileImageUrl String?
-  role            Role     @default(MEMBER)
-  status          Status   @default(ACTIVE)
+  role            Role      @default(MEMBER)
+  status          Status    @default(ACTIVE)
   devotionStart   DateTime?
   addedById       String?
-  addedBy         User?    @relation("MemberInvites", fields: [addedById], references: [id])
-  invitedUsers    User[]   @relation("MemberInvites")
+  addedBy         User?     @relation("MemberInvites", fields: [addedById], references: [id])
+  invitedUsers    User[]    @relation("MemberInvites")
+  // Birthday, used by the alarm sweep (lib/alarms.ts fireBirthdays) to
+  // fire a "🎂 It's <name>'s birthday today" notification to all active
+  // members. Year + month + day — the table shows day + month only.
+  birthday        DateTime?
 
-  posts                Post[]
-  comments             Comment[]
-  eventAttendees       EventAttendee[]
-  meetingParticipants  MeetingParticipant[]
-  meetingSessions      MeetingSession[]
-  reminders            Reminder[]
-  notificationDeliveries NotificationDelivery[]
-  deviceTokens         DeviceToken[]
-  createdEvents        Event[]
-  createdMeetings      Meeting[]
-  createdAnnouncements Announcement[]
-  createdNotifications Notification[]
-  settingsUpdated      AppSetting[]
+  posts                    Post[]
+  comments                 Comment[]
+  eventAttendees           EventAttendee[]
+  meetingParticipants      MeetingParticipant[]
+  meetingSessions          MeetingSession[]
+  meetingAttendances       MeetingAttendance[]
+  reminders                Reminder[]
+  notificationDeliveries   NotificationDelivery[]
+  deviceTokens             DeviceToken[]
+  createdEvents            Event[]
+  createdMeetings          Meeting[]
+  createdAnnouncements     Announcement[]
+  createdNotifications     Notification[]
+  settingsUpdated          AppSetting[]
   conversationParticipants ConversationParticipant[]
   messagesSent             Message[]
+
+  meetingMusicPausedBy Meeting[] @relation("MeetingMusicPausedBy")
+  meetingEndedBy       Meeting[] @relation("MeetingEndedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -109,12 +117,12 @@ model User {
 // ============================================================
 
 model AppSetting {
-  id                String    @id @default("global")
-  discussionEnabled Boolean   @default(true)
-  commentsEnabled   Boolean   @default(true)
+  id                String   @id @default("global")
+  discussionEnabled Boolean  @default(true)
+  commentsEnabled   Boolean  @default(true)
   updatedById       String?
-  updatedBy         User?     @relation(fields: [updatedById], references: [id])
-  updatedAt         DateTime  @updatedAt
+  updatedBy         User?    @relation(fields: [updatedById], references: [id])
+  updatedAt         DateTime @updatedAt
 
   // The daily Holy Hour alarm (03:00 and 15:00, Africa/Kampala — see
   // HOLY_HOUR_TIMES in lib/alarms.ts) is inbuilt and always on. It fires for
@@ -122,6 +130,10 @@ model AppSetting {
   // the UTC instant of the last occurrence that fired, so each one claims
   // atomically.
   holyHourLastFiredAt DateTime?
+  // Last Kampala date (midnight local) on which the birthday sweep fired.
+  // Same claim pattern as holyHourLastFiredAt — one marker, atomic, prevents
+  // double-firing on the same day.
+  birthdayLastFiredAt DateTime?
 }
 
 // ============================================================
@@ -156,11 +168,11 @@ model Comment {
 // find-or-create race-proof: two simultaneous "start a chat" taps can't create
 // duplicate threads.
 model Conversation {
-  id              String   @id @default(uuid())
-  conversationKey String   @unique
+  id              String                    @id @default(uuid())
+  conversationKey String                    @unique
   participants    ConversationParticipant[]
   messages        Message[]
-  createdAt       DateTime @default(now())
+  createdAt       DateTime                  @default(now())
 }
 
 model ConversationParticipant {
@@ -194,19 +206,19 @@ model Message {
 // ============================================================
 
 model Event {
-  id          String    @id @default(uuid())
+  id          String          @id @default(uuid())
   title       String
   description String?
-  type        EventType @default(OTHER)
+  type        EventType       @default(OTHER)
   startTime   DateTime
   endTime     DateTime?
   location    String?
   createdById String
-  createdBy   User      @relation(fields: [createdById], references: [id])
+  createdBy   User            @relation(fields: [createdById], references: [id])
   attendees   EventAttendee[]
   reminders   Reminder[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 }
 
 model EventAttendee {
@@ -239,35 +251,53 @@ model Reminder {
 // ============================================================
 
 model Meeting {
-  id           String      @id @default(uuid())
-  title        String
-  description  String?
-  type         MeetingType @default(VIDEO)
-  startsAt     DateTime
-  endsAt       DateTime?
-  meetingLink  String?
-  location     String? // physical venue or "Zoom link" etc
+  id                    String               @id @default(uuid())
+  title                 String
+  description           String?
+  type                  MeetingType          @default(VIDEO)
+  startsAt              DateTime
+  endsAt                DateTime?
+  meetingLink           String?
+  location              String? // physical venue or "Zoom link" etc
+  // True for system-created Holy Hour calls (spawned automatically by the
+  // alarm sweep at each Holy Hour time). Any ACTIVE member other than the
+  // Technical Lead may join these without being an explicit invitee.
+  isAuto                Boolean              @default(false)
   // How long before startsAt the reminder fires (0 = at start time). The
   // meeting reminder is a distinct path from the daily Holy Hour alarm: one
   // `notified` flag per meeting claims it atomically so no reminder sends
   // twice, regardless of how many sweeps (interval, cron, poll) run.
-  reminderMinutesBefore Int     @default(15)
-  notified              Boolean @default(false)
-  createdById  String
-  createdBy    User        @relation(fields: [createdById], references: [id])
-  participants MeetingParticipant[]
-  signals      MeetingSignal[]
-  sessions     MeetingSession[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  reminderMinutesBefore Int                  @default(15)
+  notified              Boolean              @default(false)
+  createdById           String?
+  createdBy             User?                @relation(fields: [createdById], references: [id])
+  // Music: starts playing for everyone on join; Patron / Chairperson can
+  // toggle `musicPlaying` for the room. Default true so newly-spawned auto
+  // Holy Hour calls play by default.
+  musicPlaying          Boolean              @default(true)
+  musicPausedAt         DateTime?
+  musicPausedById       String?
+  musicPausedBy         User?                @relation("MeetingMusicPausedBy", fields: [musicPausedById], references: [id])
+  // End-of-call state. `endedAt IS NOT NULL` is the single source of truth
+  // for "the room is closed" — set by a leader's End Call or by the
+  // auto-end endpoint when the clock hits endsAt.
+  endedAt               DateTime?
+  endedById             String?
+  endedBy               User?                @relation("MeetingEndedBy", fields: [endedById], references: [id])
+  participants          MeetingParticipant[]
+  signals               MeetingSignal[]
+  sessions              MeetingSession[]
+  attendances           MeetingAttendance[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 }
 
 model MeetingParticipant {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   meetingId String
-  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meeting   Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   joinedAt  DateTime?
   leftAt    DateTime?
 
@@ -302,6 +332,34 @@ model MeetingSession {
   joinedAt  DateTime @default(now())
 
   @@index([meetingId])
+}
+
+// Historical attendance log for meetings (Holy Hour calls and any future
+// manual meetings). One row per (meeting, user, attendance-burst): a user
+// who joins, leaves, and rejoins the same meeting gets one row per
+// attendance burst, summed in the UI to show "total time in call".
+//
+// Inserted on join with `leftAt` NULL and `durationSeconds` 0; updated on
+// leave with `leftAt = now()` and `durationSeconds` recomputed from the
+// latest `joinedAt`. Never deleted by the app — the meeting's
+// `onDelete: Cascade` cleans up if the meeting itself is removed.
+//
+// Indexed on (meetingId, userId) for the per-meeting attendance view, and
+// on (userId, joinedAt) for any future "my attendance" view.
+model MeetingAttendance {
+  id              String    @id @default(uuid())
+  meetingId       String
+  meeting         Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt        DateTime  @default(now())
+  leftAt          DateTime?
+  // Wall-clock duration of this attendance burst. Filled on leave. NULL
+  // while the user is still in the call.
+  durationSeconds Int?
+
+  @@index([meetingId, userId])
+  @@index([userId, joinedAt])
 }
 
 // ============================================================
@@ -344,18 +402,18 @@ model Announcement {
 // ============================================================
 
 model Notification {
-  id           String           @id @default(uuid())
+  id           String                 @id @default(uuid())
   title        String
   body         String
-  type         NotificationType @default(ANNOUNCEMENT)
+  type         NotificationType       @default(ANNOUNCEMENT)
   targetRole   Role? // null = send to all members
   link         String? // deep link, e.g. "/events/<id>"
   scheduledFor DateTime?
   sentAt       DateTime?
   createdById  String?
-  createdBy    User?            @relation(fields: [createdById], references: [id])
+  createdBy    User?                  @relation(fields: [createdById], references: [id])
   deliveries   NotificationDelivery[]
-  createdAt    DateTime         @default(now())
+  createdAt    DateTime               @default(now())
 }
 
 model NotificationDelivery {

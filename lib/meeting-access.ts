@@ -2,9 +2,11 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * True when the user may take part in the meeting: they are an invitee
- * (MeetingParticipant) or the meeting's creator. Every signaling, session and
- * room endpoint must check this against the meetingId in the request/URL —
- * never trust a client-supplied session claim.
+ * (MeetingParticipant), the meeting's creator, or — for system-created Holy
+ * Hour calls (isAuto) — any active member other than the Technical Lead (the
+ * same exclusion set the alarm sweep uses). Every signaling, session and room
+ * endpoint must check this against the meetingId in the request/URL — never
+ * trust a client-supplied session claim.
  */
 export async function isMeetingParticipant(
   meetingId: string,
@@ -17,8 +19,24 @@ export async function isMeetingParticipant(
     }),
     prisma.meeting.findUnique({
       where: { id: meetingId },
-      select: { createdById: true },
+      select: { createdById: true, isAuto: true, endedAt: true },
     }),
   ]);
-  return Boolean(participant) || meeting?.createdById === userId;
+  if (participant) return true;
+  if (!meeting) return false;
+  // A closed room is closed for everyone — no exceptions for creator or
+  // direct invitees. `endedAt` is the single source of truth for "the call
+  // has ended" (leader End Call, or the auto-end endpoint when the clock
+  // hits endsAt). Late joiners get the dedicated "call has ended" screen
+  // from the meeting-room page, not a misleading "not invited".
+  if (meeting.endedAt !== null) return false;
+  if (meeting.createdById === userId) return true;
+  if (meeting.isAuto) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { status: true, role: true },
+    });
+    return user?.status === "ACTIVE" && user.role !== "TECHNICAL_LEAD";
+  }
+  return false;
 }

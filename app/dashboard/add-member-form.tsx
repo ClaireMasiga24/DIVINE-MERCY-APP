@@ -23,6 +23,7 @@ export default function AddMemberForm({ canAssignTechLead }: { canAssignTechLead
   const router = useRouter();
   const [digits, setDigits] = useState("");
   const [fullName, setFullName] = useState("");
+  const [birthday, setBirthday] = useState("");
   const [role, setRole] = useState("MEMBER");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,17 +45,26 @@ export default function AddMemberForm({ canAssignTechLead }: { canAssignTechLead
       const res = await fetch("/api/members/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber: `+256${digits}`, fullName: fullName.trim(), role }),
+        body: JSON.stringify({
+          phoneNumber: `+256${digits}`,
+          fullName: fullName.trim(),
+          role,
+          birthday: birthday || null,
+        }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = (await res.json().catch(() => ({}))) as {
+        user?: { fullName: string; role: string };
+        error?: string;
+      };
       if (!res.ok) {
         setError(data.error ?? "Couldn't add the member. Try again.");
         return;
       }
       setDigits("");
       setFullName("");
+      setBirthday("");
       setRole("MEMBER");
-      setSuccess(`${data.user.fullName} was added as ${data.user.role.replace("_", " ")}.`);
+      setSuccess(`${data.user?.fullName} was added as ${data.user?.role.replace("_", " ")}.`);
       router.refresh();
     } catch {
       setError("Network error. Check your connection and try again.");
@@ -129,6 +139,21 @@ export default function AddMemberForm({ canAssignTechLead }: { canAssignTechLead
           >
             {busy ? "Adding…" : "Add member"}
           </button>
+        </div>
+
+        <div className="sm:col-span-3">
+          <label htmlFor="new-birthday" className={labelClass}>
+            Birthday
+          </label>
+          <input
+            id="new-birthday"
+            type="date"
+            autoComplete="off"
+            value={birthday}
+            onChange={(e) => setBirthday(e.target.value)}
+            className={inputClass}
+          />
+          <p className="mt-1 text-[10px] text-dim/70">Optional. The app notifies everyone when it&apos;s their birthday.</p>
         </div>
       </div>
 

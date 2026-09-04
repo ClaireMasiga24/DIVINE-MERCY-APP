@@ -1,4 +1,10 @@
-import { getNextHolyHourUtc, HOLY_HOUR_TIMES } from "@/lib/alarms";
+import {
+  getNextHolyHourUtc,
+  HOLY_HOUR_TIMES,
+  HOLY_HOUR_SCHEDULE,
+  getKampalaWeekdayKey,
+  KAMPALA_TZ,
+} from "@/lib/alarms";
 
 const formatTimeLabel = (t: string) => {
   const [hh, mm] = t.split(":").map(Number);
@@ -26,11 +32,50 @@ function BellIcon({ className }: { className?: string }) {
 }
 
 /**
- * The daily Holy Hour alarm — inbuilt and always on. It rings every day at the
- * fixed Holy Hour times (03:00 and 15:00, Africa/Kampala) for all active
- * members, with a push notification and an in-app chime while the app is open.
+ * Build the UTC candidate for a given Kampala-local time on `now`'s day,
+ * matching the math in `lib/alarms.ts` (getDailyHolyHourTargetUtc /
+ * getNextHolyHourUtc). Used here to compute "is there a call still left
+ * today?".
+ */
+function kampalaCandidateForToday(time: string, now: Date): Date {
+  const [hh, mm] = time.split(":").map(Number);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KAMPALA_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const p = (t: string) => parts.find((x) => x.type === t)?.value;
+  const year = Number(p("year"));
+  const month = Number(p("month"));
+  const day = Number(p("day"));
+  const offsetMs = (() => {
+    const offset = new Intl.DateTimeFormat("en-US", {
+      timeZone: KAMPALA_TZ,
+      timeZoneName: "longOffset",
+    }).formatToParts(now).find((x) => x.type === "timeZoneName")?.value ?? "+00:00";
+    const m = /([+-])(\d{2}):(\d{2})/.exec(offset);
+    if (!m) return 0;
+    const sign = m[1] === "-" ? -1 : 1;
+    return sign * (Number(m[2]) * 60 + Number(m[3])) * 60 * 1000;
+  })();
+  return new Date(Date.UTC(year, month - 1, day, hh, mm, 0) - offsetMs);
+}
+
+/**
+ * The daily Holy Hour group call — inbuilt and always on. The system itself
+ * calls the parish together at the fixed Holy Hour times (03:00 and 15:00,
+ * Africa/Kampala) for most of the week. Saturday is 3 AM only; Sunday has
+ * no call. Every member gets a ring and can hop into the video/audio room
+ * with one tap.
  */
 export default function HolyHourCard() {
+  const now = new Date();
+  const todaysTimes = HOLY_HOUR_SCHEDULE[getKampalaWeekdayKey(now)];
+  const remainingToday = todaysTimes.filter((t) =>
+    kampalaCandidateForToday(t, now).getTime() > now.getTime()
+  );
+  const noCallToday = remainingToday.length === 0;
   const nextLabel = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Africa/Kampala",
     weekday: "long",
@@ -38,7 +83,7 @@ export default function HolyHourCard() {
     month: "short",
     hour: "numeric",
     minute: "2-digit",
-  }).format(getNextHolyHourUtc());
+  }).format(getNextHolyHourUtc(now));
 
   return (
     <div className="rounded-2xl border border-line bg-ivory p-5 shadow-sm sm:p-6">
@@ -47,10 +92,11 @@ export default function HolyHourCard() {
           <BellIcon className="h-6 w-6 text-[#3B2F1E]" />
         </div>
         <div>
-          <div className="text-sm font-semibold text-ink">Holy Hour alarm</div>
+          <div className="text-sm font-semibold text-ink">Holy Hour group call</div>
           <p className="mt-0.5 text-xs text-dim">
-            Rings every day at 3:00 AM and 3:00 PM (Kampala time) for all members —
-            push notification, and an in-app chime while the app is open.
+            The system rings every member automatically at 3:00 AM and 3:00 PM
+            (Kampala time) on weekdays — no scheduling needed. Tap Join to
+            enter the call; latecomers can hop in any time during the hour.
           </p>
         </div>
       </div>
@@ -64,12 +110,22 @@ export default function HolyHourCard() {
             {formatTimeLabel(t)}
           </span>
         ))}
-        <span className="text-xs text-dim">every day · Africa/Kampala</span>
+        <span className="text-xs text-dim">Mon–Fri · Africa/Kampala</span>
+        <span className="text-[11px] text-dim">· Sat: 3 AM only · Sun: no call</span>
       </div>
 
-      <p className="mt-4 rounded-lg border border-gold/30 bg-gold/10 px-4 py-2.5 text-sm text-dim">
-        Next Holy Hour: <span className="font-semibold text-gold">{nextLabel}</span>
-      </p>
+      {noCallToday ? (
+        <p className="mt-4 rounded-lg border border-line bg-ivory-lift px-4 py-2.5 text-sm text-dim">
+          No call scheduled for the rest of today.{" "}
+          <span className="font-semibold text-gold">
+            Next Holy Hour: {nextLabel}
+          </span>
+        </p>
+      ) : (
+        <p className="mt-4 rounded-lg border border-gold/30 bg-gold/10 px-4 py-2.5 text-sm text-dim">
+          Next Holy Hour: <span className="font-semibold text-gold">{nextLabel}</span>
+        </p>
+      )}
     </div>
   );
 }
