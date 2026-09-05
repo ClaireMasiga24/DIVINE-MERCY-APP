@@ -14,7 +14,7 @@
  * Bump CACHE_VERSION whenever the set of cached URLs changes to bust
  * stale caches on existing installs.
  */
-const CACHE_VERSION = "dm-shell-v3";
+const CACHE_VERSION = "dm-shell-v4";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
