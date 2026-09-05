@@ -40,17 +40,11 @@ export async function POST(req: Request) {
   try {
     user = await prisma.user.findUnique({ where: { phoneNumber: phone } });
   } catch (err) {
-    // Database unreachable / misconfigured. Surface a real error
-    // message instead of letting the 500 fall through as
-    // "Something went wrong" with no body.
+    // Database unreachable / misconfigured. Log on the server and
+    // return a generic 500. The login page surfaces a fallback
+    // "Something went wrong" message from its own catch.
     console.error("[auth/login] Prisma user lookup failed", err);
-    return NextResponse.json(
-      {
-        error:
-          "Sign-in is temporarily unavailable. Please try again in a moment, and contact parish leadership if it keeps failing.",
-      },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: "Sign-in failed. Try again." }, { status: 500 });
   }
   if (!user || user.status !== "ACTIVE") {
     return NextResponse.json(
@@ -75,13 +69,7 @@ export async function POST(req: Request) {
     sessionId = await issueSession(user.id, user.phoneNumber, deviceId, userAgent);
   } catch (err) {
     console.error("[auth/login] issueSession failed", err);
-    return NextResponse.json(
-      {
-        error:
-          "Sign-in is temporarily unavailable. Please try again in a moment, and contact parish leadership if it keeps failing.",
-      },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: "Sign-in failed. Try again." }, { status: 500 });
   }
 
   const response = NextResponse.json({

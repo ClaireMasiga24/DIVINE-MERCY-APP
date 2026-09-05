@@ -8,16 +8,26 @@ import SplashPushOptIn from "./splash-push-opt-in";
 import { InstallInstructions } from "./install-instructions";
 import {
   useInstallEvent,
-  isMobile,
   isIOSLike,
   isAndroid,
   isSamsungBrowser,
   isIOSChrome,
   isIOSFirefox,
-  isInstalledDisplayMode,
   browserMenuLabel,
   type PromptResult,
 } from "@/lib/install-store";
+
+// Inline the "is this a phone" check instead of importing isMobile
+// from the install-store. Avoids a Turbopack module-resolution edge
+// case where useState lazy initializers that call imported helpers
+// can fail with "X is not a function" on the app-client bundle.
+function detectPhone(): boolean {
+  if (typeof navigator === "undefined") return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const uaMobile = (navigator as any).userAgentData?.mobile;
+  if (typeof uaMobile === "boolean") return uaMobile;
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
 
 /**
  * The PWA splash route (also the manifest's `start_url`).
@@ -85,11 +95,20 @@ export default function Home() {
   // mismatch. SSR: false. Client first render: real value.
   const [isPhone] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return isMobile();
+    return detectPhone();
   });
   const [isInstalled] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return isInstalledDisplayMode();
+    try {
+      if (window.matchMedia("(display-mode: standalone)").matches) return true;
+      if (window.matchMedia("(display-mode: minimal-ui)").matches) return true;
+      if (window.matchMedia("(display-mode: fullscreen)").matches) return true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((navigator as any).standalone === true) return true;
+    } catch {
+      /* matchMedia not supported */
+    }
+    return false;
   });
 
   // Auto-redirect ONLY on desktop. Phone users always see the splash
