@@ -36,7 +36,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
   }
 
-  const user = await prisma.user.findUnique({ where: { phoneNumber: phone } });
+  let user;
+  try {
+    user = await prisma.user.findUnique({ where: { phoneNumber: phone } });
+  } catch (err) {
+    // Database unreachable / misconfigured. Surface a real error
+    // message instead of letting the 500 fall through as
+    // "Something went wrong" with no body.
+    console.error("[auth/login] Prisma user lookup failed", err);
+    return NextResponse.json(
+      {
+        error:
+          "Sign-in is temporarily unavailable. Please try again in a moment, and contact parish leadership if it keeps failing.",
+      },
+      { status: 503 }
+    );
+  }
   if (!user || user.status !== "ACTIVE") {
     return NextResponse.json(
       { error: "This number isn't registered. Contact parish leadership." },
@@ -55,7 +70,19 @@ export async function POST(req: Request) {
   const deviceId = incomingDeviceId ?? randomUUID();
   const userAgent = req.headers.get("user-agent");
 
-  const sessionId = await issueSession(user.id, user.phoneNumber, deviceId, userAgent);
+  let sessionId;
+  try {
+    sessionId = await issueSession(user.id, user.phoneNumber, deviceId, userAgent);
+  } catch (err) {
+    console.error("[auth/login] issueSession failed", err);
+    return NextResponse.json(
+      {
+        error:
+          "Sign-in is temporarily unavailable. Please try again in a moment, and contact parish leadership if it keeps failing.",
+      },
+      { status: 503 }
+    );
+  }
 
   const response = NextResponse.json({
     ok: true,

@@ -24,21 +24,21 @@ import {
  *
  * Two distinct experiences share this single screen:
  *
- *   **A. Returning / desktop user** (the original flow, unchanged):
- *      Splash shows the parish seal, runs a non-blocking `/api/auth/check`,
- *      waits 1.6 s for the seal animation to land, then `router.replace`s
- *      to `/dashboard/<role>` or `/login`. Fast and invisible — exactly
- *      what you want for someone who has already installed the app or is
- *      browsing on a laptop.
+ *   **A. Desktop user** (the original fast-redirect flow):
+ *      Splash shows the parish seal, runs a non-blocking
+ *      `/api/auth/check`, waits 1.6 s for the seal animation to land,
+ *      then `router.replace`s to `/dashboard/<role>` or `/login`. Fast
+ *      and invisible — exactly what you want for someone on a laptop.
  *
- *   **B. First-time phone visitor** (the new install surface): Splash
- *      shows the parish seal + a large, primary "Install app" /
- *      "Add to Home Screen" CTA below it. There is NO auto-redirect.
- *      The user has to either install the app or tap a small "Continue
- *      to sign in" link to leave. This is the only way a non-tech
- *      parish member is going to install a PWA on their phone — the
- *      previous version's tiny floating pill at the bottom of `/login`
- *      was easy to miss, and the auto-redirect kicked them past it.
+ *   **B. Phone user** (always sees the install surface, per product
+ *      requirement): Splash shows the parish seal + a large, primary
+ *      install CTA below it. There is NO auto-redirect on phones —
+ *      installed or not. The user can install, re-trigger the install
+ *      steps, or tap "Continue to sign in" to leave. This is the only
+ *      way a non-tech parish member is going to install a PWA on their
+ *      phone; the previous version's tiny floating pill at the bottom
+ *      of `/login` was easy to miss, and the auto-redirect kicked them
+ *      past it.
  *
  * Why this matters
  * ----------------
@@ -60,50 +60,46 @@ import {
  *
  * Install-state read
  * ------------------
- *   `phoneNotInstalled` is computed once via a lazy `useState` initializer
- *   (mirroring `app/dashboard/app-panel.tsx:36–43`) so:
- *
- *     - SSR: both `isMobile()` and `isInstalledDisplayMode()` return
- *       `false` (they read `navigator` / `matchMedia`). So the server
- *       renders the original splash, not the install surface. No
- *       hydration mismatch — the client simply re-renders with the
- *       correct value on first commit.
- *     - Client: returns `true` only on a phone that is NOT in
- *       standalone display mode. Once the user installs, the next
- *       splash visit returns `false` and the fast redirect takes over.
+ *   `isPhone` and `isInstalled` are computed once via lazy
+ *   `useState` initializers (mirroring `app/dashboard/app-panel.tsx:36–43`)
+ *   so SSR returns `false` for both (the helpers read `navigator` /
+ *   `matchMedia` and short-circuit on `typeof window === "undefined"`).
+ *   No hydration mismatch — the client simply re-renders with the
+ *   correct values on first commit.
  *
  * Push opt-in on this branch
  * --------------------------
- *   The `<SplashPushOptIn />` card is hidden on the install branch.
- *   Two competing CTAs at the bottom of a phone screen confuse
- *   non-tech users; the install CTA is the higher-priority action for
- *   a first-time visitor. The push opt-in still appears on `/login`
- *   and on the dashboard where it's relevant.
+ *   The `<SplashPushOptIn />` card is hidden on phones. Two competing
+ *   CTAs at the bottom of a phone screen confuse non-tech users; the
+ *   install CTA is the higher-priority action for a phone visitor. The
+ *   push opt-in still appears on `/login` and on the dashboard where
+ *   it's relevant.
  */
 export default function Home() {
   const router = useRouter();
-  const { event, prompt, promptRevision } = useInstallEvent();
+  const { event, prompt } = useInstallEvent();
   const [installModalOpen, setInstallModalOpen] = useState(false);
   const [installResult, setInstallResult] = useState<string | null>(null);
-  const [autoPrompted, setAutoPrompted] = useState(false);
-  const [userTriedInstall, setUserTriedInstall] = useState(false);
 
   // Single lazy initializer — no `useEffect` setState, no hydration
   // mismatch. SSR: false. Client first render: real value.
-  const [phoneNotInstalled] = useState<boolean>(() => {
+  const [isPhone] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return isMobile() && !isInstalledDisplayMode();
+    return isMobile();
+  });
+  const [isInstalled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return isInstalledDisplayMode();
   });
 
-  // The original auto-redirect: only runs on the desktop / installed
-  // branch. Phone-not-installed visitors stay on this splash until
-  // they install or tap "Continue to sign in".
+  // Auto-redirect ONLY on desktop. Phone users always see the splash
+  // so the install option is available — even if they've already
+  // installed the PWA, the user has explicitly asked for the "Get
+  // the app" affordance to remain.
   useEffect(() => {
-    if (phoneNotInstalled) return;
+    if (isPhone) return;
     let cancelled = false;
     (async () => {
-      // Give the seal animation a beat to land so the splash doesn't
-      // feel like a flash of "DIVINE MERCY → bounced to /login".
       const minDisplay = new Promise((r) => setTimeout(r, 1600));
       const authCheck = fetch("/api/auth/check", { cache: "no-store" })
         .then((res) => (res.ok ? res.json() : { authenticated: false }))
@@ -119,45 +115,10 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [router, phoneNotInstalled]);
+  }, [router, isPhone]);
 
-  // Auto-pop the install sheet the moment Chrome decides we're
-  // installable. Chrome's `beforeinstallprompt` heuristic is slow on
-  // first visit — it waits until the user has interacted with the
-  // site. We can't predict when it'll fire, but we can react the
-  // instant it does. Without this, the user has to tap "Install app"
-  // twice: once for the manual modal, then again when Chrome's
-  // heuristic eventually fires.
-  //
-  // Only on the phone-not-installed branch. Desktop and already-
-  // installed users don't see the install sheet.
-  useEffect(() => {
-    if (!phoneNotInstalled) return;
-    if (!event) return;
-    if (autoPrompted) return;
-    // Don't auto-prompt if the user has already tried installing —
-    // they're in the middle of reading the manual steps or already
-    // saw the native sheet. Re-prompting would be hostile.
-    if (userTriedInstall) return;
-    // Defer the state update to a microtask so React doesn't see it
-    // as a cascading render from the effect body. Mirrors the pattern
-    // at `app/dashboard/app-panel.tsx:56`.
-    Promise.resolve().then(() => setAutoPrompted(true));
-    // Give the user 6 seconds to read the splash before we pop the
-    // install sheet. Chrome's heuristic can take a while to fire
-    // BIP, and the user needs time to register what the app is
-    // before being asked to install. If they tap "Install app"
-    // before this fires, the click handler will pop the sheet
-    // immediately — so this is a floor, not a ceiling.
-    const t = window.setTimeout(() => {
-      void prompt();
-    }, 6000);
-    return () => window.clearTimeout(t);
-  }, [phoneNotInstalled, event, autoPrompted, userTriedInstall, prompt, promptRevision]);
-
-  // The "Continue to sign in" path — used by the install branch.
-  // Same logic as the original effect's success path: hit /api/auth/check
-  // and route based on the answer. The `cancelled` guard prevents a
+  // "Continue to sign in" link on the splash. Hits /api/auth/check
+  // and routes based on the answer. The `cancelled` guard prevents a
   // late response from replacing after the user has already moved on.
   const continueToSignIn = async () => {
     try {
@@ -174,10 +135,6 @@ export default function Home() {
   };
 
   const onInstallTap = async () => {
-    // Mark the user as having tried to install so the auto-prompt
-    // doesn't pop a second native sheet on top of whatever they
-    // just saw.
-    setUserTriedInstall(true);
     // iPhone and non-Chrome Android browsers can't fire `event` (no
     // beforeinstallprompt). On those we go straight to the manual
     // instructions modal — that's the only path that works.
@@ -234,14 +191,12 @@ export default function Home() {
       className="flex min-h-screen flex-col items-center bg-[#F3EEE2] px-6 pb-[max(3rem,env(safe-area-inset-bottom))] pt-[max(6rem,env(safe-area-inset-top))]"
     >
       {/*
-        Push opt-in is hidden on the install branch. The push card
-        is `fixed bottom-4` and the install card is in-flow, so
-        even with the push opt-in shown they wouldn't strictly
-        collide — but two competing CTAs at the bottom of a phone
-        screen is a bad UX for non-tech users. The push opt-in still
-        appears on /login and on the dashboard.
+        Push opt-in only on desktop. Phone users always see the
+        install card, so the push card would be a competing CTA
+        at the bottom of the screen. The push opt-in still appears
+        on /login and on the dashboard.
       */}
-      {!phoneNotInstalled ? <SplashPushOptIn /> : null}
+      {!isPhone ? <SplashPushOptIn /> : null}
 
       <main className="flex w-full max-w-md flex-1 flex-col items-center justify-center text-center">
         <div className="mb-6 flex items-center gap-2 text-[#B8975A] sm:mb-10">
@@ -284,9 +239,10 @@ export default function Home() {
           </div>
         </div>
 
-        {phoneNotInstalled ? (
+        {isPhone ? (
           <SplashInstallCard
             primaryLabel={primaryLabel}
+            isInstalled={isInstalled}
             onInstallTap={onInstallTap}
             onContinue={continueToSignIn}
           />
@@ -311,35 +267,55 @@ export default function Home() {
 }
 
 /**
- * In-flow install CTA shown below the seal for first-time phone
- * visitors. Same brand gold gradient as the Sign in button — primary
- * action feel. The "Continue to sign in" link is small and dimmed so
- * it doesn't compete.
+ * In-flow install CTA shown below the seal for phone visitors — both
+ * not-yet-installed AND already-installed. The user has explicitly
+ * asked for the "Get the app" affordance to remain even after the
+ * PWA is installed (so they can re-show it to a friend, for example).
+ *
+ * Same brand gold gradient as the Sign in button — primary action
+ * feel. The "Continue to sign in" link is small and dimmed so it
+ * doesn't compete.
  */
 function SplashInstallCard({
   primaryLabel,
+  isInstalled,
   onInstallTap,
   onContinue,
 }: {
   primaryLabel: string;
+  isInstalled: boolean;
   onInstallTap: () => void;
   onContinue: () => void;
 }) {
   return (
     <div className="fade-in mt-8 w-full max-w-sm text-center sm:mt-10">
-      <h1 className="text-balance text-xl font-semibold text-[#2B2115] sm:text-2xl">
-        Add the parish app to your phone
-      </h1>
-      <p className="mt-2 text-balance text-sm text-[#6B5D4F]">
-        One tap. Works offline. Sends you Holy Hour alarms even when the
-        app is closed.
-      </p>
+      {isInstalled ? (
+        <>
+          <h1 className="text-balance text-xl font-semibold text-[#2B2115] sm:text-2xl">
+            App is installed
+          </h1>
+          <p className="mt-2 text-balance text-sm text-[#6B5D4F]">
+            The Divine Mercy Seeta app is on your home screen. Tap its
+            icon to open, or use the button below to open it now.
+          </p>
+        </>
+      ) : (
+        <>
+          <h1 className="text-balance text-xl font-semibold text-[#2B2115] sm:text-2xl">
+            Add the parish app to your phone
+          </h1>
+          <p className="mt-2 text-balance text-sm text-[#6B5D4F]">
+            One tap. Works offline. Sends you Holy Hour alarms even when
+            the app is closed.
+          </p>
+        </>
+      )}
       <button
         type="button"
         onClick={onInstallTap}
         className="mt-5 h-12 w-full rounded-full bg-gradient-to-b from-[#D9B76A] to-[#C9A24E] text-sm font-semibold text-[#3B2F1E] shadow-[0_6px_20px_rgba(180,140,60,0.4)] transition hover:brightness-105"
       >
-        {primaryLabel}
+        {isInstalled ? "How to install on another phone" : primaryLabel}
       </button>
       <button
         type="button"
