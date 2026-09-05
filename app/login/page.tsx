@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import InstallBanner from "../install-banner";
 
 export default function LoginPage() {
   const [phone, setPhone] = useState("");
@@ -140,6 +141,7 @@ export default function LoginPage() {
           Divine Mercy Seeta Parish · Jesus, I trust in You
         </p>
       </main>
+      <InstallBanner />
     </div>
   );
 }

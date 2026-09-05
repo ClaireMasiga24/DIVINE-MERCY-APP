@@ -32,11 +32,13 @@ export async function isMeetingParticipant(
   if (meeting.endedAt !== null) return false;
   if (meeting.createdById === userId) return true;
   if (meeting.isAuto) {
+    // System-created Holy Hour calls: any active member may join. The
+    // Technical Lead is included so they can be reached on the call.
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { status: true, role: true },
+      select: { status: true },
     });
-    return user?.status === "ACTIVE" && user.role !== "TECHNICAL_LEAD";
+    return user?.status === "ACTIVE";
   }
   return false;
 }

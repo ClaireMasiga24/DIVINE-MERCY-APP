@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import InstallBanner from "./install-banner";
+import SplashPushOptIn from "./splash-push-opt-in";
 
 /**
  * The PWA splash route (also the manifest's `start_url`).
@@ -57,6 +59,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#F3EEE2] px-6 py-24">
+      <SplashPushOptIn />
       <main className="flex w-full max-w-lg flex-col items-center text-center">
         <div className="mb-10 flex items-center gap-2 text-[#B8975A]">
           <svg
@@ -92,6 +95,7 @@ export default function Home() {
           </div>
         </div>
       </main>
+      <InstallBanner />
     </div>
   );
 }

@@ -242,9 +242,9 @@ async function notifyAllActiveUsers(
 /**
  * The system-created Holy Hour group call for a given occurrence. Idempotent:
  * the findFirst guard means concurrent sweeps or retries converge on one
- * Meeting row per occurrence time. Every active member (except the Technical
- * Lead) becomes an invitee; members registered later are still covered by the
- * isAuto fallback in lib/meeting-access.ts.
+ * Meeting row per occurrence time. Every active member (including the
+ * Technical Lead) becomes an invitee; members registered later are still
+ * covered by the isAuto fallback in lib/meeting-access.ts.
  */
 export async function ensureHolyHourCall(target: Date): Promise<{ id: string }> {
   const existing = await prisma.meeting.findFirst({
@@ -265,8 +265,10 @@ export async function ensureHolyHourCall(target: Date): Promise<{ id: string }> 
     select: { id: true },
   });
 
+  // Every active member is invited — the Technical Lead is included so they
+  // can be paged for the Holy Hour call.
   const members = await prisma.user.findMany({
-    where: { status: "ACTIVE", role: { not: "TECHNICAL_LEAD" } },
+    where: { status: "ACTIVE" },
     select: { id: true },
   });
   await prisma.meetingParticipant.createMany({
@@ -325,7 +327,7 @@ export async function fireDailyHolyHour(now: Date = new Date()): Promise<void> {
         "MEETING",
         `/dashboard/meeting-room/${call.id}`,
         target,
-        ["TECHNICAL_LEAD"],
+        [], // every active member, including the Technical Lead
         { call: true, ringMs: CALL_RING_MS }
       );
     } catch (err) {
@@ -490,7 +492,7 @@ export async function fireBirthdays(now: Date = new Date()): Promise<void> {
         "ANNOUNCEMENT",
         "/dashboard/notifications",
         todayMidnight,
-        ["TECHNICAL_LEAD"]
+        [] // every active member, including the Technical Lead
       );
     }
   } catch (err) {

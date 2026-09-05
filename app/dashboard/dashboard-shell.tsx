@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import SignOutButton from "./sign-out-button";
 import PushSetup from "./push-setup";
 import AlarmListener from "./alarm-listener";
-import InstallPrompt from "./install-prompt";
+import InstallBanner from "../install-banner";
 import { SectionIcon } from "./section-icons";
 
 type Section = { slug: string; label: string };
@@ -269,7 +269,7 @@ export default function DashboardShell({ user, children }: Props) {
       {/* Web push setup + in-app alarm listener */}
       <PushSetup />
       <AlarmListener />
-      <InstallPrompt />
+      <InstallBanner />
     </div>
   );
 }
