@@ -1,15 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import {
-  useInstallEvent,
-  isIOSLike,
-  isIPad,
-  isIPhone,
-  isAndroid,
-  isSamsungBrowser,
-  browserMenuLabel,
-} from "@/lib/install-store";
+import { useInstallEvent } from "@/lib/install-store";
+import { InstallInstructions } from "./install-instructions";
 
 /**
  * Install help surface that works on EVERY phone, not just Chromium-with-BIP.
@@ -31,6 +24,9 @@ import {
  * The dismiss state has a 14-day TTL and is per-user-localStorage. We
  * also add a "How to install" entry in Settings so a dismissed user can
  * always find their way back.
+ *
+ * The per-browser instruction copy is shared with the splash's install
+ * surface and the dashboard help page — see `./install-instructions.tsx`.
  */
 export default function InstallBanner() {
   const { event, installed, dismissed, prompt, dismiss } = useInstallEvent();
@@ -106,13 +102,6 @@ function InstallModal({
   onDismiss: () => void;
   onPrompt: () => void | Promise<void>;
 }) {
-  const ios = isIOSLike();
-  const ipad = isIPad();
-  const iphone = isIPhone();
-  const android = isAndroid();
-  const samsung = isSamsungBrowser();
-  const menu = browserMenuLabel();
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-4 pt-12 sm:items-center sm:py-12"
@@ -170,17 +159,7 @@ function InstallModal({
             </>
           ) : null}
 
-          {ios ? (
-            <IOSInstructions ipad={ipad} iphone={iphone} />
-          ) : android ? (
-            samsung ? (
-              <SamsungInstructions menu={menu} />
-            ) : (
-              <AndroidChromeInstructions menu={menu} />
-            )
-          ) : (
-            <GenericInstructions menu={menu} />
-          )}
+          <InstallInstructions />
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-[#F0E8D6] bg-[#FBF7EE] px-5 py-3">
@@ -200,117 +179,6 @@ function InstallModal({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Step({
-  n,
-  children,
-}: {
-  n: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <li className="flex items-start gap-3">
-      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#D9B76A] to-[#C9A24E] text-[10px] font-bold text-[#3B2F1E]">
-        {n}
-      </span>
-      <span className="flex-1 text-sm text-[#2B2115]">{children}</span>
-    </li>
-  );
-}
-
-function IOSInstructions({ ipad, iphone }: { ipad: boolean; iphone: boolean }) {
-  const device = ipad ? "iPad" : iphone ? "iPhone" : "device";
-  return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8A7C63]">
-        {device} · Safari
-      </p>
-      <ol className="space-y-2">
-        <Step n={1}>
-          Tap the <strong>Share</strong> button at the bottom of Safari.
-          <span aria-hidden className="ml-1 inline-block align-middle text-[#3B2F1E]">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
-              <path d="M12 3v13M5 8l7-5 7 5M5 21h14" />
-            </svg>
-          </span>
-        </Step>
-        <Step n={2}>
-          Scroll down and tap <strong>Add to Home Screen</strong>.
-        </Step>
-        <Step n={3}>
-          Tap <strong>Add</strong> in the top-right. The app will appear on your home screen.
-        </Step>
-      </ol>
-    </div>
-  );
-}
-
-function AndroidChromeInstructions({ menu }: { menu: string }) {
-  return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8A7C63]">
-        Android · Chrome
-      </p>
-      <ol className="space-y-2">
-        <Step n={1}>
-          Tap the <strong>{menu}</strong> button (top-right of Chrome).
-        </Step>
-        <Step n={2}>
-          Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.
-        </Step>
-        <Step n={3}>
-          Tap <strong>Install</strong>. The app will appear on your home screen.
-        </Step>
-      </ol>
-      <p className="mt-3 text-xs text-[#8A7C63]">
-        Don&apos;t see &quot;Install app&quot;? Chrome only offers it after you&apos;ve used the
-        site a few times. Keep the site open for a minute and try again.
-      </p>
-    </div>
-  );
-}
-
-function SamsungInstructions({ menu }: { menu: string }) {
-  return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8A7C63]">
-        Android · Samsung Internet
-      </p>
-      <ol className="space-y-2">
-        <Step n={1}>
-          Tap the <strong>{menu}</strong> button at the bottom of the screen.
-        </Step>
-        <Step n={2}>
-          Tap <strong>Add page to</strong> → <strong>Home screen</strong>.
-        </Step>
-        <Step n={3}>
-          Tap <strong>Add</strong>. The app will appear on your home screen.
-        </Step>
-      </ol>
-    </div>
-  );
-}
-
-function GenericInstructions({ menu }: { menu: string }) {
-  return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8A7C63]">
-        Your browser
-      </p>
-      <ol className="space-y-2">
-        <Step n={1}>
-          Open the <strong>{menu}</strong> in your browser.
-        </Step>
-        <Step n={2}>
-          Look for <strong>Add to Home Screen</strong> or <strong>Install app</strong>.
-        </Step>
-        <Step n={3}>
-          Confirm. The app will appear on your home screen.
-        </Step>
-      </ol>
     </div>
   );
 }

@@ -118,7 +118,7 @@ const SERVER_SNAPSHOT: InstallState = {
  * because users clear app data / uninstall / reinstall without our
  * knowing, and a stale flag would silently block the install UI forever.
  */
-function isInstalledDisplayMode(): boolean {
+export function isInstalledDisplayMode(): boolean {
   if (typeof window === "undefined") return false;
   try {
     if (window.matchMedia("(display-mode: standalone)").matches) return true;

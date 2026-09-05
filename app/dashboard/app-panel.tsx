@@ -11,6 +11,7 @@ import {
   isMobile,
   browserMenuLabel,
 } from "@/lib/install-store";
+import { ShareGlyph } from "../install-instructions";
 
 /**
  * In-app install help for the dashboard. Mounted under /dashboard/<role>/app.
@@ -350,26 +351,6 @@ function IOSInstructionsRow({ n, text }: { n: number; text: React.ReactNode }) {
       </span>
       <span className="flex-1 text-sm text-[#2B2115]">{text}</span>
     </li>
-  );
-}
-
-function ShareGlyph() {
-  return (
-    <span aria-hidden className="mx-1 inline-block align-middle text-[#3B2F1E]">
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="inline-block"
-      >
-        <path d="M12 3v13M5 8l7-5 7 5M5 21h14" />
-      </svg>
-    </span>
   );
 }
 
