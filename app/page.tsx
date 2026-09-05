@@ -82,9 +82,11 @@ import {
  */
 export default function Home() {
   const router = useRouter();
-  const { event, prompt } = useInstallEvent();
+  const { event, prompt, promptRevision } = useInstallEvent();
   const [installModalOpen, setInstallModalOpen] = useState(false);
   const [installResult, setInstallResult] = useState<string | null>(null);
+  const [autoPrompted, setAutoPrompted] = useState(false);
+  const [userTriedInstall, setUserTriedInstall] = useState(false);
 
   // Single lazy initializer — no `useEffect` setState, no hydration
   // mismatch. SSR: false. Client first render: real value.
@@ -119,6 +121,40 @@ export default function Home() {
     };
   }, [router, phoneNotInstalled]);
 
+  // Auto-pop the install sheet the moment Chrome decides we're
+  // installable. Chrome's `beforeinstallprompt` heuristic is slow on
+  // first visit — it waits until the user has interacted with the
+  // site. We can't predict when it'll fire, but we can react the
+  // instant it does. Without this, the user has to tap "Install app"
+  // twice: once for the manual modal, then again when Chrome's
+  // heuristic eventually fires.
+  //
+  // Only on the phone-not-installed branch. Desktop and already-
+  // installed users don't see the install sheet.
+  useEffect(() => {
+    if (!phoneNotInstalled) return;
+    if (!event) return;
+    if (autoPrompted) return;
+    // Don't auto-prompt if the user has already tried installing —
+    // they're in the middle of reading the manual steps or already
+    // saw the native sheet. Re-prompting would be hostile.
+    if (userTriedInstall) return;
+    // Defer the state update to a microtask so React doesn't see it
+    // as a cascading render from the effect body. Mirrors the pattern
+    // at `app/dashboard/app-panel.tsx:56`.
+    Promise.resolve().then(() => setAutoPrompted(true));
+    // Give the user 6 seconds to read the splash before we pop the
+    // install sheet. Chrome's heuristic can take a while to fire
+    // BIP, and the user needs time to register what the app is
+    // before being asked to install. If they tap "Install app"
+    // before this fires, the click handler will pop the sheet
+    // immediately — so this is a floor, not a ceiling.
+    const t = window.setTimeout(() => {
+      void prompt();
+    }, 6000);
+    return () => window.clearTimeout(t);
+  }, [phoneNotInstalled, event, autoPrompted, userTriedInstall, prompt, promptRevision]);
+
   // The "Continue to sign in" path — used by the install branch.
   // Same logic as the original effect's success path: hit /api/auth/check
   // and route based on the answer. The `cancelled` guard prevents a
@@ -138,6 +174,10 @@ export default function Home() {
   };
 
   const onInstallTap = async () => {
+    // Mark the user as having tried to install so the auto-prompt
+    // doesn't pop a second native sheet on top of whatever they
+    // just saw.
+    setUserTriedInstall(true);
     // iPhone and non-Chrome Android browsers can't fire `event` (no
     // beforeinstallprompt). On those we go straight to the manual
     // instructions modal — that's the only path that works.
@@ -166,7 +206,7 @@ export default function Home() {
         ? "You dismissed the install sheet. You can still install manually below."
         : res.kind === "error"
           ? `Couldn't open the install sheet: ${res.message}`
-          : "The native prompt is no longer available. Use the manual steps below."
+          : "Chrome isn't ready to install yet. Use the menu steps below — we'll keep trying while you read this."
     );
     setInstallModalOpen(true);
   };

@@ -190,20 +190,28 @@ function AndroidChromeInstructions({ menu }: { menu: string }) {
       <SectionLabel>Android · Chrome</SectionLabel>
       <ol className="space-y-2.5">
         <Step n={1}>
-          Tap the <strong>{menu}</strong> button (top-right of Chrome).
+          Tap the <strong>{menu}</strong> button at the <strong>top-right of
+          Chrome</strong> (three dots, next to the address bar).
         </Step>
         <Step n={2}>
-          Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.
+          Look for <strong>Install app</strong> or <strong>Add to Home
+          screen</strong> in the menu. Tap it.
         </Step>
         <Step n={3}>
-          Tap <strong>Install</strong>. The app will appear on your home screen.
+          Tap <strong>Install</strong> on the popup. The app will appear on
+          your home screen.
         </Step>
       </ol>
-      <div className="mt-3">
+      <div className="mt-3 space-y-2">
         <HintBox>
-          Don&apos;t see &quot;Install app&quot;? Chrome only offers it after you&apos;ve
-          used the site a few times. Keep the site open for a minute and try
-          again.
+          <strong>Don&apos;t see &quot;Install app&quot; in the menu?</strong> Chrome only
+          offers it after the site has been used for a moment. Keep this
+          page open for 30 seconds, then tap {menu} again.
+        </HintBox>
+        <HintBox>
+          <strong>Or look for the install icon</strong> at the right end of
+          the address bar (a small picture of a screen with a down arrow).
+          Tap it to install in one step.
         </HintBox>
       </div>
     </div>
