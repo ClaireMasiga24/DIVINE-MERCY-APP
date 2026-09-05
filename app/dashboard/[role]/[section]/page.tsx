@@ -13,6 +13,7 @@ import SettingsPanel from "../../settings-panel";
 import SongsPanel from "../../songs-panel";
 import PrayersPanel from "../../prayers-panel";
 import AnnouncementsPanel from "../../announcements-panel";
+import AppPanel from "../../app-panel";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -138,6 +139,17 @@ export default async function RoleSectionPage({
     return (
       <div className="mx-auto max-w-3xl">
         <AnnouncementsPanel />
+      </div>
+    );
+  }
+
+  // App — install help + system status. Visible to every role so any
+  // member can find install instructions even after dismissing the
+  // floating banner.
+  if (found.slug === "app") {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <AppPanel />
       </div>
     );
   }

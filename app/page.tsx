@@ -37,10 +37,12 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // 800 ms minimum so the splash doesn't blink for already-signed-in
-      // users on a fast connection. The PWA start_url is set to "/" so
-      // this screen is what the user sees on every relaunch.
-      const minDisplay = new Promise((r) => setTimeout(r, 800));
+      // The splash is also the install surface for first-time phone
+      // visitors. Give them enough time to see the floating "Get the app"
+      // pill and decide whether to tap it before we kick them off the
+      // page. 1.6 s is long enough to register the button without feeling
+      // like a stuck loader on a fast connection.
+      const minDisplay = new Promise((r) => setTimeout(r, 1600));
       const authCheck = fetch("/api/auth/check", { cache: "no-store" })
         .then((res) => (res.ok ? res.json() : { authenticated: false }))
         .catch(() => ({ authenticated: false }));

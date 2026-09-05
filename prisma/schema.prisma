@@ -97,6 +97,7 @@ model User {
   reminders                Reminder[]
   notificationDeliveries   NotificationDelivery[]
   deviceTokens             DeviceToken[]
+  sessions                 Session[]
   createdEvents            Event[]
   createdMeetings          Meeting[]
   createdAnnouncements     Announcement[]
@@ -438,4 +439,39 @@ model DeviceToken {
   authKey   String? // web push subscription auth secret (required for sending)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// SESSIONS (DB-backed, device-bound)
+// ============================================================
+// One row per (phoneNumber, deviceId) login. The cookie carries the
+// opaque `id`; every protected request looks up the row and checks
+// `deviceId` matches the `dm_device` cookie + `revokedAt IS NULL` +
+// `expiresAt > now()`. Logout sets `revokedAt`; the row stays for
+// audit. New device → new session; same phone on a new device does
+// NOT invalidate the old device's session.
+//
+// `phoneNumber` is denormalized — purely for audit / future admin
+// tooling, never used for auth (the join is `Session.userId` →
+// `User.id`).
+model Session {
+  id          String    @id // opaque UUIDv4, the cookie value
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The dm_device cookie value at the time of login. Every protected
+  // request verifies the current dm_device cookie still matches this
+  // string; a mismatch = the cookie was copied to another device, deny.
+  deviceId    String
+  // Audit only — same comment as `phoneNumber` below.
+  phoneNumber String
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+  // Updated on every successful getSessionUser (with a 60s debounce).
+  lastSeenAt  DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([expiresAt])
 }

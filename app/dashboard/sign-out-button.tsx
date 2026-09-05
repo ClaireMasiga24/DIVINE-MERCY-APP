@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { wipeClientSession } from "@/lib/client-wipe";
 
 export default function SignOutButton() {
   const [busy, setBusy] = useState(false);
@@ -9,11 +10,23 @@ export default function SignOutButton() {
     if (busy) return;
     setBusy(true);
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch {
-      // Clear the cookie server-side anyway via the redirect flow below.
+      // Server side first — this revokes the Session row and clears
+      // both cookies. Authoritative.
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+      } catch {
+        // Even if the network call failed, fall through to client wipe
+        // and the redirect — the user's intent is "get me out."
+      }
+      // Client side — clear localStorage, IndexedDB, SW caches,
+      // unsubscribe push. Best-effort; wrapped in a 1.5s timeout
+      // internally so it can't hang the redirect.
+      await wipeClientSession();
+    } finally {
+      // The redirect MUST happen, even if both the fetch and the wipe
+      // threw — the user is trying to leave.
+      window.location.assign("/login");
     }
-    window.location.assign("/login");
   };
 
   return (

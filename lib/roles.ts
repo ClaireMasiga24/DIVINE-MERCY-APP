@@ -27,6 +27,7 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "prayers", label: "Prayer Resources" },
     { slug: "announcements", label: "Announcements" },
     { slug: "notifications", label: "Notifications" },
+    { slug: "app", label: "App" },
   ],
   SECRETARY: [
     { slug: "songs", label: "Divine Mercy Songs" },
@@ -36,6 +37,7 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "meetings", label: "Meetings" },
     { slug: "notifications", label: "Notifications" },
     { slug: "discussion", label: "Discussion" },
+    { slug: "app", label: "App" },
   ],
   TREASURER: [
     { slug: "songs", label: "Divine Mercy Songs" },
@@ -45,6 +47,7 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "events", label: "Events" },
     { slug: "notifications", label: "Notifications" },
     { slug: "discussion", label: "Discussion" },
+    { slug: "app", label: "App" },
   ],
   MOBILISER: [
     { slug: "songs", label: "Divine Mercy Songs" },
@@ -53,6 +56,7 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "events", label: "Events" },
     { slug: "notifications", label: "Notifications" },
     { slug: "discussion", label: "Discussion" },
+    { slug: "app", label: "App" },
   ],
   PRO: [
     { slug: "songs", label: "Divine Mercy Songs" },
@@ -62,6 +66,7 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "discussion", label: "Discussion" },
     { slug: "events", label: "Events" },
     { slug: "notifications", label: "Notifications" },
+    { slug: "app", label: "App" },
   ],
   CHAIRPERSON: [
     { slug: "songs", label: "Divine Mercy Songs" },
@@ -72,6 +77,7 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "settings", label: "Settings" },
     { slug: "notifications", label: "Notifications" },
     { slug: "discussion", label: "Discussion" },
+    { slug: "app", label: "App" },
   ],
   PATRON: [
     { slug: "songs", label: "Divine Mercy Songs" },
@@ -82,6 +88,7 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "settings", label: "Settings" },
     { slug: "notifications", label: "Notifications" },
     { slug: "discussion", label: "Discussion" },
+    { slug: "app", label: "App" },
   ],
   // The Technical Lead gets the full union of every section any other
   // role has — the operator needs the same dashboard as everyone else,
@@ -99,5 +106,6 @@ export const ROLE_SECTIONS: Record<Role, { slug: string; label: string }[]> = {
     { slug: "events", label: "Events" },
     { slug: "prayers", label: "Prayer Resources" },
     { slug: "notifications", label: "Notifications" },
+    { slug: "app", label: "App" },
   ],
 };

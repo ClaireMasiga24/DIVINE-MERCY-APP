@@ -5,6 +5,10 @@ import type { MetadataRoute } from "next";
 // iOS, ChromeOS, Edge, and desktop browsers that support PWA install.
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    // `id` is required by Chromium 109+ for stable install identity.
+    // Without it, the installability heuristic downgrades the PWA and
+    // `beforeinstallprompt` is much less likely to fire on phones.
+    id: "/?source=pwa",
     name: "Divine Mercy Seeta",
     short_name: "Divine Mercy",
     description:

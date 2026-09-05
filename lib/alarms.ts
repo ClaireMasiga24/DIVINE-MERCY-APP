@@ -1,6 +1,7 @@
 import { NotificationType, type Role } from "@prisma/client";
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
+import { pruneExpiredSessions } from "@/lib/auth";
 
 /**
  * Alarm + call engine: the daily Holy Hour group call and per-event reminders.
@@ -399,7 +400,14 @@ export async function fireEventReminders(now: Date = new Date()): Promise<void> 
 
 /** Runs every alarm sweep: daily Holy Hour + due event reminders + birthdays. */
 export async function runAlarmCheck(now: Date = new Date()): Promise<void> {
-  await Promise.all([fireDailyHolyHour(now), fireEventReminders(now), fireBirthdays(now)]);
+  await Promise.all([
+    fireDailyHolyHour(now),
+    fireEventReminders(now),
+    fireBirthdays(now),
+    // Housekeeping: drop revoked/expired Session rows so the table
+    // doesn't grow without bound. Idempotent and cheap.
+    pruneExpiredSessions(),
+  ]);
 }
 
 /**

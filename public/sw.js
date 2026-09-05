@@ -1,25 +1,37 @@
 /* Divine Mercy PWA service worker.
  *
- * Two responsibilities:
- *   1. Push notifications for prayer alarms + meeting calls (unchanged).
+ * Three responsibilities:
+ *   1. Push notifications for prayer alarms + meeting calls.
  *   2. Offline app-shell caching so the parish app opens even when the
  *      phone is on a flaky connection.
+ *   3. (Security) Auth-gated HTML (anything under /dashboard or
+ *      /meeting-room) is NEVER cached and NEVER served from cache.
+ *      The previous version pre-cached /dashboard, which let a stale
+ *      snapshot of another member's dashboard surface on a fresh
+ *      install or during a network blip. That whole leak path is now
+ *      closed.
  *
- * Bump CACHE_VERSION whenever the set of cached URLs changes to bust the
+ * Bump CACHE_VERSION whenever the set of cached URLs changes to bust
  * stale caches on existing installs.
  */
-const CACHE_VERSION = "dm-shell-v1";
+const CACHE_VERSION = "dm-shell-v3";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
-// Static assets that should always be available offline. Anything we ship
-// from /public that the app references on first paint goes here. Keep this
-// list tight — the broader cache strategy below (stale-while-revalidate)
-// covers anything we miss.
+// Routes that render user-specific data. Caching their HTML responses
+// — even briefly — is what produced the cross-device leakage. The SW
+// bypasses the cache for all of these: navigations are network-only
+// (with an inline "Connection lost" fallback when offline), asset
+// requests for these paths are skipped entirely.
+const AUTH_GATED_PREFIXES = ["/dashboard", "/meeting-room"];
+const isAuthGated = (pathname) =>
+  AUTH_GATED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+
+// Static assets that should always be available offline. Note: /dashboard
+// was here in v2 and is gone in v3 — it's the leak vector.
 const APP_SHELL = [
   "/",
   "/login",
-  "/dashboard",
   "/offline",
   "/manifest.webmanifest",
   "/icon-192.png",
@@ -31,12 +43,23 @@ const APP_SHELL = [
   "/Images/SEETA PARISH DIVINE MERCY.png",
 ];
 
+// Minimal HTML for when an auth-gated navigation can't reach the
+// network. Deliberately does NOT auto-redirect anywhere — see
+// app/offline/page.tsx for why the redirect loop is bad.
+const OFFLINE_GATED_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connection lost</title><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;margin:0;padding:24px;background:#F3EEE2;color:#3B2F1E;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center}h1{font-size:1.25rem;margin:0 0 8px}p{font-size:.875rem;color:#6B5D4F;margin:0 0 20px}a{color:#3B2F1E;font-weight:600}</style></head><body><div><h1>Connection lost</h1><p>Sign in again once you're back online.</p><a href="/login">Sign in</a></div></body></html>`;
+
+// 3xx responses pointing at /login are post-logout redirects. Caching
+// them would let stale auth redirects linger in the runtime cache.
+const isRedirectToLogin = (res) => {
+  if (!res || res.status < 300 || res.status >= 400) return false;
+  const loc = res.headers.get("Location") || "";
+  return loc === "/login" || loc.endsWith("/login") || loc.includes("/login?");
+};
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(SHELL_CACHE);
-      // addAll is atomic — if any URL 404s the whole install fails. Pre-cache
-      // one at a time so a missing future asset doesn't break the SW.
       await Promise.all(
         APP_SHELL.map((url) =>
           cache.add(url).catch(() => {
@@ -52,7 +75,8 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      // Drop any caches from previous versions.
+      // Drop any caches from previous versions (incl. dm-shell-v2-shell
+      // / dm-shell-v2-runtime, which were the leaky caches).
       const keys = await caches.keys();
       await Promise.all(
         keys
@@ -66,28 +90,50 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  // Only handle GET. Don't intercept POSTs/PUTs (mutations) or anything with
-  // a non-http scheme (chrome-extension://, data:, etc).
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-
-  // Never cache auth-sensitive traffic or live API calls — only static
-  // navigation + asset requests. /api/notifications/subscribe and friends
-  // have to hit the network.
   if (url.pathname.startsWith("/api/")) return;
 
-  // Same-origin navigations: try the network, fall back to the cached
-  // /offline page so the user sees something helpful instead of the browser's
-  // offline dinosaur. /dashboard is auth-gated and would just redirect to
-  // /login, so we don't try to serve it as a fallback.
+  // (1) Auth-gated navigation requests: network-only. Never cached,
+  //     never served from cache. On network failure, return a tiny
+  //     inline HTML so the user sees something without triggering the
+  //     /offline redirect loop.
+  if (isAuthGated(url.pathname) && req.mode === "navigate") {
+    event.respondWith(
+      (async () => {
+        try {
+          const fresh = await fetch(req, { cache: "no-store", credentials: "include" });
+          // Intentionally NO cache.put here. If you ever add it, guard
+          // it with isRedirectToLogin first to avoid caching stale
+          // post-logout redirects.
+          return fresh;
+        } catch {
+          return new Response(OFFLINE_GATED_HTML, {
+            status: 200,
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          });
+        }
+      })()
+    );
+    return;
+  }
+
+  // (2) Other auth-gated asset requests: skip the cache entirely.
+  if (isAuthGated(url.pathname)) return;
+
+  // (3) Other navigations: try the network, fall back to the cached
+  //     /offline page. Skip caching when the response is a 3xx to
+  //     /login (post-logout) so it doesn't pollute the runtime cache.
   if (req.mode === "navigate") {
     event.respondWith(
       (async () => {
         try {
           const fresh = await fetch(req);
-          const cache = await caches.open(RUNTIME_CACHE);
-          cache.put(req, fresh.clone()).catch(() => {});
+          if (fresh && fresh.ok && !isRedirectToLogin(fresh)) {
+            const cache = await caches.open(RUNTIME_CACHE);
+            cache.put(req, fresh.clone()).catch(() => {});
+          }
           return fresh;
         } catch {
           const cached =
@@ -101,9 +147,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets (CSS/JS/images/fonts): stale-while-revalidate. The user
-  // gets the cached copy instantly if we have it, and we refresh in the
-  // background for next time.
+  // (4) Static assets (CSS/JS/images/fonts): stale-while-revalidate.
   event.respondWith(
     (async () => {
       const cached = await caches.match(req);
@@ -121,6 +165,21 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
+// Logout posts {type: "WIPE_CACHES"} to the SW. Drop our caches so a
+// returning user (or a new one on the same device) starts clean.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "WIPE_CACHES") {
+    event.waitUntil(
+      (async () => {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys.filter((k) => k.startsWith("dm-shell-")).map((k) => caches.delete(k))
+        );
+      })()
+    );
+  }
+});
+
 self.addEventListener("push", (event) => {
   let payload = { title: "Divine Mercy", body: "", url: "/dashboard" };
   if (event.data) {
@@ -131,8 +190,8 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  // Incoming call: if the app is open and visible, the in-app ringer handles
-  // it — don't stack a second ringtone on top.
+  // Incoming call: if the app is open and visible, the in-app ringer
+  // handles it — don't stack a second ringtone on top.
   const isCall = Boolean(payload.call);
   event.waitUntil(
     (async () => {
@@ -148,7 +207,7 @@ self.addEventListener("push", (event) => {
       await self.registration.showNotification(payload.title, {
         body: payload.body,
         icon: "/Images/SEETA PARISH DIVINE MERCY.png",
-        badge: "/icon.png",
+        badge: "/icon-192.png",
         tag,
         vibrate: isCall ? [500, 250, 500, 250, 500, 250, 800] : [200, 100, 200, 100, 400],
         requireInteraction: isCall || undefined,
@@ -161,11 +220,6 @@ self.addEventListener("push", (event) => {
         data: { url: payload.url },
       });
 
-      // Stop ringing after ringMs so a missed call doesn't buzz forever. The
-      // timeout must live inside waitUntil — service workers are killed when
-      // idle, so a bare setTimeout wouldn't survive. Best-effort: some
-      // browsers cap how long waitUntil keeps the worker alive; the in-app
-      // missed-call banner stays authoritative either way.
       if (isCall) {
         const ringMs = typeof payload.ringMs === "number" ? payload.ringMs : 45000;
         await new Promise((resolve) => setTimeout(resolve, Math.min(ringMs, 60000)));
@@ -196,8 +250,6 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-// A subscription expired or changed on the push service side — tell open
-// tabs so the client can re-subscribe and sync the new endpoint.
 self.addEventListener("pushsubscriptionchange", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {

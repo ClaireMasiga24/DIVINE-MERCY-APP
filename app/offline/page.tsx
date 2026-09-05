@@ -3,9 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+/**
+ * Shown when the SW has no cached copy of a page and the network is
+ * down. Important: this page does NOT auto-redirect to /dashboard.
+ * Previously it did — but when the SW fails /dashboard and falls back
+ * here, an auto-redirect would loop forever:
+ *
+ *   SW serves /offline → page sees online=true → location.replace(/dashboard)
+ *   → fetch fails again → SW serves /offline → repeat
+ *
+ * Captive portals (airport wifi, etc.) report `online=true` while
+ * still blocking real traffic. So we treat the manual "Try again"
+ * button as the only legitimate path back into the app.
+ */
 export default function OfflinePage() {
-  // Lazy initializer runs once at mount — safe for SSR (returns `true` when
-  // navigator is undefined), and avoids the "setState in effect" lint.
   const [online, setOnline] = useState<boolean>(() => {
     if (typeof navigator === "undefined") return true;
     return navigator.onLine;
@@ -23,12 +34,6 @@ export default function OfflinePage() {
     };
   }, []);
 
-  // If the connection comes back, bounce to the dashboard — there's nothing
-  // useful on /offline once we're online again.
-  useEffect(() => {
-    if (online) window.location.replace("/dashboard");
-  }, [online]);
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-sky px-6 text-center">
       <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-b from-[#D9B76A] to-[#C9A24E] text-[#3B2F1E] shadow-[0_8px_24px_rgba(180,140,60,0.35)]">
@@ -43,18 +48,29 @@ export default function OfflinePage() {
       <h1 className="text-2xl font-semibold text-ink">You&rsquo;re offline</h1>
       <p className="mt-3 max-w-md text-sm text-dim">
         Divine Mercy Seeta couldn&rsquo;t reach the internet. The app shell is
-        still available &mdash; once you&rsquo;re back online, the latest
-        prayer times and announcements will refresh automatically.
+        still available &mdash; tap below once you&rsquo;re back online to
+        refresh the latest prayer times and announcements.
       </p>
-      <div className="mt-8 flex flex-col items-center gap-2 text-xs text-dim">
-        <p>
-          Push alarms you enabled still ring even while you&rsquo;re offline.
+      {online ? (
+        <p className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-900">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Connection detected
         </p>
-        <Link
-          href="/dashboard"
-          className="mt-2 rounded-full border border-gold/40 bg-ivory px-4 py-1.5 font-semibold text-ink transition hover:bg-ivory-lift"
+      ) : null}
+      <div className="mt-8 flex flex-col items-center gap-3 text-xs text-dim">
+        <p>Push alarms you enabled still ring even while you&rsquo;re offline.</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-full border border-gold/40 bg-ivory px-5 py-2 font-semibold text-ink transition hover:bg-ivory-lift"
         >
-          Try the dashboard
+          Try again
+        </button>
+        <Link
+          href="/login"
+          className="rounded-full border border-line bg-white px-5 py-2 font-semibold text-dim transition hover:border-gold hover:text-ink"
+        >
+          Go to sign in
         </Link>
       </div>
     </div>
