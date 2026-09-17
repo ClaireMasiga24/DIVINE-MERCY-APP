@@ -20,6 +20,95 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Holy Hour alarms and calls (production setup)
+
+At each scheduled Holy Hour the app calls every member: their phone rings, shows
+**Incoming call**, and one tap drops them into the parish call room.
+
+**How one ring happens.** `runAlarmCheck()` in `lib/alarms.ts` (the "sweep")
+spawns the call room, then sends a web-push call payload (`call: true`) to every
+active member's subscribed devices. The service worker renders it as an
+incoming-call notification with Join/Dismiss and rings for 45 seconds;
+`app/dashboard/alarm-listener.tsx` shows a full-screen ringer when the app is
+already open. The schedule is `HOLY_HOUR_SCHEDULE`: Mon-Fri 03:00 and 15:00,
+Saturday 03:00, Sunday nothing, all in Africa/Kampala.
+
+### 1. Something must run the sweep (required)
+
+**Nothing rings in production until this is configured.** A serverless host has
+no timer of its own, so the sweep only runs when something calls it. Left
+unconfigured, the only trigger is a member having the app open at the moment,
+which never happens at 03:00.
+
+Set `CRON_SECRET` in the environment, then point an external scheduler at the
+route **every minute**. Any of these work:
+
+- **cron-job.org** (free): create a job for `https://<your-app>/api/cron/alarms?token=<CRON_SECRET>`,
+  schedule every 1 minute.
+- **UptimeRobot** (free): a URL monitor on the same URL at a 1-minute interval.
+- **GitHub Actions**: a scheduled workflow hitting the same URL with
+  `Authorization: Bearer <CRON_SECRET>`.
+
+Vercel's built-in cron can only do this on a **paid** plan. On Hobby, cron jobs
+run at most once per day and may drift by up to an hour; a more frequent
+expression fails the deployment outright. Per-minute scheduling needs Pro, where
+you can add to `vercel.json`:
+
+```json
+{
+  "crons": [{ "path": "/api/cron/alarms", "schedule": "* * * * *" }]
+}
+```
+
+(Also set `CRON_SECRET` if you use this: the route accepts either the `?token=`
+query or a Bearer header, so Vercel cron works with `?token=` in the path.)
+
+Every sweep is idempotent and atomic, so calling it more often than necessary is
+harmless. The 60-minute window around each occurrence means a late scheduler
+still rings rather than silently skipping.
+
+### 2. Test it without waiting
+
+```bash
+# Ring one member (use their login phone number)
+curl -X POST "https://<your-app>/api/admin/holy-hour-call?token=<CRON_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"+2567XXXXXXXX"}'
+
+# Ring every active member
+curl -X POST "https://<your-app>/api/admin/holy-hour-call?token=<CRON_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{"all":true}'
+```
+
+The response reports, per member, whether the push was `DELIVERED`, whether they
+had **NO_SUBSCRIPTION** (never enabled alarms), or whether it **FAILED**, with the
+error. Chairperson, Patron and Technical Lead can also call this from a signed-in
+session. It never touches the schedule claim, so a test cannot consume or
+suppress the real occurrence.
+
+### 3. See who didn't get rung
+
+```bash
+curl "https://<your-app>/api/admin/holy-hour-call?token=<CRON_SECRET>"
+```
+
+Returns the delivery outcome of the most recent Holy Hour call, one row per
+member. Every attempt is recorded in the `HolyHourCallLog` table; failures are
+retried once by the next sweep (up to `HOLY_HOUR_CALL_MAX_ATTEMPTS`, see
+`lib/alarms.ts`) while the room is still current.
+
+For a coverage picture, `GET /api/admin/push-health` reports how many active
+members have a working push subscription.
+
+### Member requirements
+
+A member is only reachable if they installed the app **and** allowed
+notifications. A phone number alone is not a delivery channel: there is no
+telephony or SMS integration, so a member who never granted notification
+permission cannot be rung while the app is closed. Use the two admin routes
+above to see exactly who is and isn't covered.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

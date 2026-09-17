@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SWRegister from "./sw-register";
 import InstallCapture from "./install-capture";
+import { CHUNK_RECOVERY_SCRIPT } from "@/lib/chunk-recovery";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -77,6 +78,13 @@ export default function RootLayout({
           name="apple-mobile-web-app-status-bar-style"
           content="black-translucent"
         />
+        {/*
+          Stale-chunk recovery. Must be inline and must run before any
+          chunk: if the chunk that fails to load is the one that would have
+          registered the handler, only a script already in the document can
+          catch it. See lib/chunk-recovery.ts for the full explanation.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: CHUNK_RECOVERY_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col">
         {children}

@@ -66,6 +66,16 @@ enum NotificationType {
   SYSTEM
 }
 
+// Outcome of trying to ring one member for one Holy Hour call. Persisted so
+// a phone that never rang is visible instead of silent — the push send used
+// to swallow every error and discard the result.
+enum HolyHourCallStatus {
+  PENDING // logged, no delivery attempt recorded yet
+  DELIVERED // at least one of the member's devices accepted the push
+  NO_SUBSCRIPTION // the member has no usable push subscription to ring
+  FAILED // every device we tried errored (retried, then given up on)
+}
+
 // ============================================================
 // USERS & LEADERSHIP
 // ============================================================
@@ -97,6 +107,7 @@ model User {
   reminders                Reminder[]
   notificationDeliveries   NotificationDelivery[]
   deviceTokens             DeviceToken[]
+  holyHourCallLogs         HolyHourCallLog[]
   sessions                 Session[]
   createdEvents            Event[]
   createdMeetings          Meeting[]
@@ -289,6 +300,7 @@ model Meeting {
   signals               MeetingSignal[]
   sessions              MeetingSession[]
   attendances           MeetingAttendance[]
+  holyHourCallLogs      HolyHourCallLog[]
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 }
@@ -439,6 +451,48 @@ model DeviceToken {
   authKey   String? // web push subscription auth secret (required for sending)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// HOLY HOUR CALL LOG (per-member delivery outcome + retry state)
+// ============================================================
+// One row per (meeting, member) for auto-created Holy Hour calls. Written by
+// the alarm sweep (lib/alarms.ts) right after it attempts the call push, and
+// re-written by the retry pass when a FAILED row is retried.
+//
+// Why a dedicated table instead of a column on NotificationDelivery:
+// NotificationDelivery means "this notification is in the member's in-app
+// inbox", which is true for members with no push subscription at all (they
+// still read it in the app). Push delivery is a different fact with a
+// different failure mode, so it gets its own row. Keeping it separate also
+// means the shared notification path for birthdays and event reminders is
+// untouched.
+model HolyHourCallLog {
+  id            String             @id @default(uuid())
+  meetingId     String
+  meeting       Meeting            @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        HolyHourCallStatus @default(PENDING)
+  // Sweep attempts made (not per-device). Capped by
+  // HOLY_HOUR_CALL_MAX_ATTEMPTS in lib/alarms.ts.
+  attempts      Int                @default(0)
+  // Cumulative device-level counters: pushes the push service accepted, and
+  // pushes that errored.
+  delivered     Int                @default(0)
+  failures      Int                @default(0)
+  lastAttemptAt DateTime?
+  // Last error message seen, so a failing member is diagnosable without
+  // server logs (Vercel function logs expire).
+  lastError     String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  // Idempotency: concurrent sweeps converge on one row per member per call.
+  @@unique([meetingId, userId])
+  // Drives the retry query: FAILED rows under the attempt cap, oldest first.
+  @@index([status, lastAttemptAt])
+  @@index([meetingId])
 }
 
 // ============================================================

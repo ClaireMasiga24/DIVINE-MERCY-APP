@@ -47,9 +47,10 @@ export default function OfflinePage() {
       </div>
       <h1 className="text-2xl font-semibold text-ink">You&rsquo;re offline</h1>
       <p className="mt-3 max-w-md text-sm text-dim">
-        Divine Mercy Seeta couldn&rsquo;t reach the internet. The app shell is
-        still available &mdash; tap below once you&rsquo;re back online to
-        refresh the latest prayer times and announcements.
+        Divine Mercy Seeta couldn&rsquo;t reach the internet. This page is the
+        offline fallback we hand you instead of the browser&rsquo;s own error
+        screen &mdash; tap below once you&rsquo;re back online to load the
+        latest prayer times and announcements.
       </p>
       {online ? (
         <p className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-900">

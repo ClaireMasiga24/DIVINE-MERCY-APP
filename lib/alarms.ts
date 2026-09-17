@@ -1,4 +1,4 @@
-import { NotificationType, type Role } from "@prisma/client";
+import { NotificationType, type HolyHourCallStatus, type Role } from "@prisma/client";
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
 import { pruneExpiredSessions } from "@/lib/auth";
@@ -13,6 +13,15 @@ import { pruneExpiredSessions } from "@/lib/auth";
  *   1. instrumentation.ts  (setInterval, every 30 s, on next start hosts)
  *   2. /api/cron/alarms     (external cron, guarded by CRON_SECRET)
  *   3. /api/alarms/check    (opportunistically, when any member polls)
+ *
+ * The sweep is the ONLY thing that makes the Holy Hour ring, so it has to be
+ * scheduled on the host. On Vercel that means an external cron (or a Pro
+ * plan cron) hitting /api/cron/alarms: a serverless function has no timer of
+ * its own, and nothing fires the sweep at 03:00 with nobody in the app. See
+ * README.md.
+ *
+ * Each attempt is recorded per member in HolyHourCallLog (delivered /
+ * no-subscription / failed), and outright failures are retried once.
  *
  * If VAPID keys are missing from .env, push is skipped silently — in-app
  * ringer/banner and the Notification rows still work.
@@ -67,6 +76,27 @@ export function getKampalaWeekdayKey(d: Date): WeekdayKey {
 
 /** How long each member's incoming-call ringer stays up before "missed". */
 export const CALL_RING_MS = 45_000;
+
+/**
+ * Copy for the Holy Hour call. Shared by the sweep, the retry pass and the
+ * manual test route so all three ring identically. The body says how to
+ * join, because the ringtone alone doesn't tell a non-technical member what
+ * to do next.
+ */
+export const HOLY_HOUR_CALL_TITLE = "Incoming call";
+export const HOLY_HOUR_CALL_BODY = "Holy Hour is starting. Tap Accept to join the parish call.";
+
+/**
+ * Retry policy for a Holy Hour call push that failed outright. One retry
+ * after a delay, capped hard so a dead subscription can never be spammed.
+ *
+ * A member with no push subscription at all (status NO_SUBSCRIPTION) is
+ * never retried: retrying cannot help until they enable alarms.
+ */
+export const HOLY_HOUR_CALL_MAX_ATTEMPTS = 2;
+export const HOLY_HOUR_CALL_RETRY_DELAY_MS = 5 * 60 * 1000;
+/** A failure is only retried while its call room is still current. */
+export const HOLY_HOUR_CALL_RETRY_WINDOW_MS = 60 * 60 * 1000;
 
 /** Human-readable Kampala label, e.g. "Sat 16 Aug, 3:00 pm". */
 export function formatKampalaLabel(d: Date): string {
@@ -171,6 +201,53 @@ export function getNextHolyHourUtc(now: Date = new Date()): Date {
   return new Date(now.getTime() + 24 * 60 * 60 * 1000);
 }
 
+/**
+ * The Holy Hour occurrence the sweep would be working on right now, or `now`
+ * itself when we are outside every ring window. Used only by the manual test
+ * route (app/api/admin/holy-hour-call): running a test at an arbitrary hour
+ * should still produce a real call room and a real ring, not a no-op.
+ *
+ * Never reads or writes the schedule claim, so a manual test can't consume
+ * or suppress the scheduled occurrence.
+ */
+export function getCurrentHolyHourTarget(now: Date = new Date()): Date {
+  const todaysTimes = HOLY_HOUR_SCHEDULE[getKampalaWeekdayKey(now)];
+  let mostRecent: Date | null = null;
+
+  for (const time of todaysTimes) {
+    const target = getDailyHolyHourTargetUtc(time, now);
+    const inWindow =
+      now.getTime() >= target.getTime() &&
+      now.getTime() <= target.getTime() + HOLY_HOUR_WINDOW_MS;
+    if (inWindow && (!mostRecent || target.getTime() > mostRecent.getTime())) {
+      mostRecent = target;
+    }
+  }
+
+  // Outside every window: a room starting at the current minute, so the
+  // Accept button still lands somewhere live.
+  return mostRecent ?? new Date(Math.floor(now.getTime() / 60_000) * 60_000);
+}
+
+/**
+ * Outcome of one attempt to ring one member. Returned instead of swallowed
+ * so the caller can log it: a phone that never rang used to leave no trace
+ * anywhere, which is why "the Holy Hour didn't ring for me" was
+ * undiagnosable.
+ */
+export type PushResult = {
+  /** VAPID keys are present, so push is even possible. */
+  configured: boolean;
+  /** Usable subscriptions found for this member. */
+  tokens: number;
+  /** Subscriptions the push service accepted. */
+  delivered: number;
+  /** Subscriptions that errored. */
+  failed: number;
+  /** Last error message, for the call log. */
+  lastError?: string;
+};
+
 /** Sends a web push to every device token of a user. Deletes dead tokens (404/410). */
 export async function sendPushToUser(
   userId: string,
@@ -178,16 +255,28 @@ export async function sendPushToUser(
   body: string,
   link?: string,
   extra?: Record<string, unknown>
-): Promise<void> {
-  if (!vapidConfigured()) return;
+): Promise<PushResult> {
+  if (!vapidConfigured()) {
+    return {
+      configured: false,
+      tokens: 0,
+      delivered: 0,
+      failed: 0,
+      lastError: "VAPID keys are not configured on the server.",
+    };
+  }
   setupVapid();
 
   const tokens = await prisma.deviceToken.findMany({
     where: { userId, platform: "web", p256dh: { not: null }, authKey: { not: null } },
   });
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) return { configured: true, tokens: 0, delivered: 0, failed: 0 };
 
   const payload = JSON.stringify({ title, body, url: link, ...extra });
+
+  let delivered = 0;
+  let failed = 0;
+  let lastError: string | undefined;
 
   await Promise.allSettled(
     tokens.map(async (t) => {
@@ -199,17 +288,141 @@ export async function sendPushToUser(
           },
           payload
         );
+        delivered += 1;
       } catch (err) {
+        failed += 1;
+        lastError = err instanceof Error ? err.message : String(err);
         const status = (err as { statusCode?: number })?.statusCode;
         // 404/410: the subscription no longer exists on the push service.
+        // 400: the subscription payload is malformed and will never work.
         if (status === 404 || status === 410 || status === 400) {
           await prisma.deviceToken.delete({ where: { id: t.id } }).catch(() => {});
         }
       }
     })
   );
+
+  return { configured: true, tokens: tokens.length, delivered, failed, lastError };
 }
 
+/**
+ * Maps a push attempt onto the persisted call-log status. Exported so the
+ * manual test route reports the same classification the sweep records.
+ */
+export function holyHourCallStatus(r: PushResult): HolyHourCallStatus {
+  if (r.delivered > 0) return "DELIVERED";
+  // Nothing to ring, but the server is fine — retrying can't help.
+  if (r.configured && r.tokens === 0) return "NO_SUBSCRIPTION";
+  // Either every device errored, or push isn't configured at all. Both are
+  // real failures and should be visible.
+  return "FAILED";
+}
+
+/**
+ * Writes one call-log row per member for a Holy Hour call attempt.
+ *
+ * NOTE these rows are NOT the in-app notification. Every member gets a
+ * NotificationDelivery row from notifyAllActiveUsers regardless of whether
+ * they have a push subscription, because the in-app inbox is the delivery
+ * channel for members who don't. This table records the push outcome only.
+ */
+async function recordHolyHourCallOutcomes(
+  meetingId: string,
+  results: Map<string, PushResult>,
+  at: Date
+): Promise<void> {
+  if (results.size === 0) return;
+
+  const entries = [...results.entries()];
+  // Chunked so a large parish doesn't build one enormous transaction.
+  const CHUNK = 100;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    await prisma.$transaction(
+      entries.slice(i, i + CHUNK).map(([userId, r]) =>
+        prisma.holyHourCallLog.upsert({
+          where: { meetingId_userId: { meetingId, userId } },
+          create: {
+            meetingId,
+            userId,
+            status: holyHourCallStatus(r),
+            attempts: 1,
+            delivered: r.delivered,
+            failures: r.failed,
+            lastAttemptAt: at,
+            lastError: r.lastError ?? null,
+          },
+          update: {
+            status: holyHourCallStatus(r),
+            attempts: { increment: 1 },
+            delivered: { increment: r.delivered },
+            failures: { increment: r.failed },
+            lastAttemptAt: at,
+            lastError: r.lastError ?? null,
+          },
+        })
+      )
+    );
+  }
+}
+
+/**
+ * Retries Holy Hour call pushes that failed outright, so a transient push
+ * outage (or a push service hiccup) doesn't silently cost a member the call.
+ * Runs on every sweep, so it needs no scheduler of its own.
+ *
+ * Bounded three ways: only FAILED rows, only while under the attempt cap,
+ * and only while the call room is still current (not ended, and started
+ * inside the retry window). Returns the number of members retried.
+ */
+export async function retryFailedHolyHourCalls(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - HOLY_HOUR_CALL_RETRY_DELAY_MS);
+  const windowStart = new Date(now.getTime() - HOLY_HOUR_CALL_RETRY_WINDOW_MS);
+
+  const stuck = await prisma.holyHourCallLog.findMany({
+    where: {
+      status: "FAILED",
+      attempts: { lt: HOLY_HOUR_CALL_MAX_ATTEMPTS },
+      OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lt: cutoff } }],
+      meeting: { endedAt: null, startsAt: { gte: windowStart } },
+    },
+    select: { id: true, meetingId: true, userId: true },
+    orderBy: { lastAttemptAt: "asc" },
+    take: 500,
+  });
+  if (stuck.length === 0) return 0;
+
+  await Promise.allSettled(
+    stuck.map(async (row) => {
+      const r = await sendPushToUser(
+        row.userId,
+        HOLY_HOUR_CALL_TITLE,
+        HOLY_HOUR_CALL_BODY,
+        `/dashboard/meeting-room/${row.meetingId}`,
+        { call: true, ringMs: CALL_RING_MS }
+      );
+      await prisma.holyHourCallLog.update({
+        where: { id: row.id },
+        data: {
+          status: holyHourCallStatus(r),
+          attempts: { increment: 1 },
+          delivered: { increment: r.delivered },
+          failures: { increment: r.failed },
+          lastAttemptAt: now,
+          lastError: r.lastError ?? null,
+        },
+      });
+    })
+  );
+
+  return stuck.length;
+}
+
+/**
+ * Rings every active member for one meeting, and returns the per-member push
+ * outcome. The in-app NotificationDelivery rows are still created for
+ * everyone up front (the in-app inbox is the delivery channel for members
+ * with no push subscription); the returned map is the push-specific result.
+ */
 async function notifyAllActiveUsers(
   title: string,
   body: string,
@@ -218,13 +431,14 @@ async function notifyAllActiveUsers(
   scheduledFor: Date,
   excludeRoles: Role[] = [],
   pushExtra?: Record<string, unknown>
-): Promise<void> {
+): Promise<Map<string, PushResult>> {
   const now = new Date();
   const users = await prisma.user.findMany({
     where: { status: "ACTIVE", ...(excludeRoles.length > 0 ? { role: { notIn: excludeRoles } } : {}) },
     select: { id: true },
   });
-  if (users.length === 0) return;
+  const results = new Map<string, PushResult>();
+  if (users.length === 0) return results;
 
   const notification = await prisma.notification.create({
     data: { title, body, type, link, scheduledFor, sentAt: now },
@@ -236,8 +450,24 @@ async function notifyAllActiveUsers(
   });
 
   await Promise.allSettled(
-    users.map((u) => sendPushToUser(u.id, title, body, link ?? undefined, pushExtra))
+    users.map(async (u) => {
+      try {
+        results.set(u.id, await sendPushToUser(u.id, title, body, link ?? undefined, pushExtra));
+      } catch (err) {
+        // A DB error while reading tokens. Record it as a failure per member
+        // rather than dropping the member from the log entirely.
+        results.set(u.id, {
+          configured: true,
+          tokens: 0,
+          delivered: 0,
+          failed: 1,
+          lastError: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })
   );
+
+  return results;
 }
 
 /**
@@ -320,11 +550,13 @@ export async function fireDailyHolyHour(now: Date = new Date()): Promise<void> {
     // Spawn the group call, then ring everyone. If either fails after the
     // claim, roll the claim back so a later sweep retries instead of the
     // occurrence being lost forever.
+    let call: { id: string };
+    let outcomes: Map<string, PushResult>;
     try {
-      const call = await ensureHolyHourCall(target);
-      await notifyAllActiveUsers(
-        "Incoming call",
-        "Holy Hour is starting — tap to join.",
+      call = await ensureHolyHourCall(target);
+      outcomes = await notifyAllActiveUsers(
+        HOLY_HOUR_CALL_TITLE,
+        HOLY_HOUR_CALL_BODY,
         "MEETING",
         `/dashboard/meeting-room/${call.id}`,
         target,
@@ -339,6 +571,17 @@ export async function fireDailyHolyHour(now: Date = new Date()): Promise<void> {
           data: { holyHourLastFiredAt: before?.holyHourLastFiredAt ?? new Date(0) },
         })
         .catch(() => {});
+      continue;
+    }
+
+    // Logging is deliberately OUTSIDE the rollback. The ring has already gone
+    // out, so if this write fails we must not roll the claim back: a second
+    // sweep would ring every member all over again. Log and carry on; the
+    // next occurrence logs normally.
+    try {
+      await recordHolyHourCallOutcomes(call.id, outcomes, target);
+    } catch (err) {
+      console.error("[alarms] failed to record Holy Hour call outcomes:", err);
     }
   }
 }
@@ -404,6 +647,9 @@ export async function runAlarmCheck(now: Date = new Date()): Promise<void> {
     fireDailyHolyHour(now),
     fireEventReminders(now),
     fireBirthdays(now),
+    // Retry any Holy Hour call push that failed. Cheap no-op when there are
+    // none, so it piggybacks on the sweep instead of needing its own timer.
+    retryFailedHolyHourCalls(now),
     // Housekeeping: drop revoked/expired Session rows so the table
     // doesn't grow without bound. Idempotent and cheap.
     pruneExpiredSessions(),

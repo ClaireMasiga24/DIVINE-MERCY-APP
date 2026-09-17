@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { registerServiceWorker } from "@/lib/sw-version";
 
 /**
  * Shared push-subscription state and actions. Used by both the dashboard
@@ -157,7 +158,14 @@ export function usePushSubscription() {
       }
 
       try {
-        const reg = await navigator.serviceWorker.register("/sw.js");
+        // Must go through the shared helper so the SW script URL (and its
+        // build-id query) matches the one SWRegister uses. Registering a
+        // bare "/sw.js" here would fight with it over the script URL.
+        const reg = await registerServiceWorker();
+        if (!reg) {
+          setPhase("unavailable");
+          return;
+        }
         regRef.current = reg;
         if (cancelled) return;
 
