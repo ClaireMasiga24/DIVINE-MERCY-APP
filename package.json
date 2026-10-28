@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:secure": "prisma db execute --file prisma/rls.sql --schema prisma/schema.prisma",
+    "db:push": "prisma db push && npm run db:secure"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",

@@ -20,6 +20,18 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Security
+
+**Always use `npm run db:push`** to create or change tables. It runs `prisma db
+push` then `npm run db:secure` (`prisma/rls.sql`), which enables Row-Level
+Security (RLS) on every table in the `public` schema. Never create tables
+without RLS.
+
+**Never put database credentials in client code.** The app talks to Postgres
+only through Prisma on the server (`DATABASE_URL` / `DIRECT_URL`). The browser
+must never see a connection string, the `app_user` password, or any Supabase
+key -- there is no Supabase client in this codebase.
+
 ## Holy Hour alarms and calls (production setup)
 
 At each scheduled Holy Hour the app calls every member: their phone rings, shows
